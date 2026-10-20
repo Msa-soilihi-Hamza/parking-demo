@@ -1,36 +1,95 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Escale Parking — démo de réservation de parking d'aéroport
 
-## Getting Started
+Projet de démonstration (marque et données fictives) : un parcours de réservation simple, et un
+**retour sans appel**. Au lieu de téléphoner une fois ses bagages récupérés, le client appuie sur
+**« J'ai mes bagages »** et la demande arrive en direct sur l'écran de l'équipe navette.
 
-First, run the development server:
+## Ce que fait la démo
+
+| Écran | Rôle |
+|---|---|
+| `/` | Landing page : promesse, fonctionnement, tarifs |
+| `/reserver` | Parking et dates avec **prix immédiat**, coordonnées, **vérification de l'e-mail par code à 6 chiffres**, puis **paiement Stripe** (mode test) |
+| `/reservation/[token]` | Lien personnel du client (reçu par e-mail) : bouton « J'ai mes bagages » le jour du retour, suivi en direct |
+| `/navette` | Équipe navette : clients à récupérer maintenant, retours prévus par créneau (aujourd'hui / demain) |
+
+Pour tester sans réserver : `/reservation/demo-retour` (avion qui vient d'atterrir) et `/navette`
+(code `navette`).
+
+## Choix techniques
+
+- **Next.js 16 (App Router, Server Actions), TypeScript, Tailwind CSS, shadcn/ui.**
+- **Vérification de l'e-mail avant tout blocage de place.** Le code à 6 chiffres est envoyé par Gmail
+  (SMTP), seul son hash est stocké, il expire après 10 minutes et la demande se bloque après 5 essais.
+  Une demande non vérifiée ne réserve aucune place : impossible de bloquer le parking avec de fausses
+  adresses.
+- **PostgreSQL dans Docker**, accès via **Drizzle ORM**, migrations versionnées dans `drizzle/`.
+- **Pas de surréservation.** Une fois l'e-mail vérifié, la mise en attente de paiement verrouille la ligne du parking
+  (`SELECT … FOR UPDATE`) puis calcule le **pic d'occupation** sur la période demandée. Deux clients qui
+  visent la dernière place sont traités l'un après l'autre. Un test d'intégration lance 10 réservations
+  simultanées sur un parking d'une place : une seule passe. Sans le verrou, le même test en accepte 10.
+- **Vrai Stripe Checkout, en mode test.** La place est retenue 30 minutes, la durée de la session
+  Checkout ; une session expirée libère la place (`checkout.session.expired`).
+- **Paiement idempotent.** Le webhook vérifie la signature, et la confirmation ne s'applique qu'une fois
+  (`UPDATE … WHERE status = 'pending_payment'`) : un événement reçu deux fois ne change rien, et l'e-mail
+  de confirmation ne part qu'une fois.
+- **Machine à états du retour** : `retour prévu → bagages récupérés → navette en route → pris en charge`.
+  Chaque transition est conditionnée au statut courant : un double clic ou deux chauffeurs en même temps
+  ne font pas sauter d'étape.
+- **Prix calculé par une seule fonction pure**, utilisée par le formulaire (prix en direct) et par le
+  serveur (montant facturé) : le prix affiché est le prix payé.
+- **Fuseau horaire** : les heures saisies sont en heure de Paris, stockées en UTC. La durée facturée se
+  mesure sur l'horloge de Paris : l'heure en plus du changement d'heure d'octobre n'est pas facturée
+  comme un jour.
+- **Temps réel** par rafraîchissement automatique toutes les 4 à 5 secondes : simple et suffisant à cette
+  échelle (WebSocket ou SSE envisageables ensuite).
+
+### Ce qui a été écarté, et pourquoi
+
+Une **API de suivi de vols** a été étudiée puis écartée. Elle aiderait à anticiper les retards, mais le
+vrai signal pour la navette, ce sont les bagages, pas l'atterrissage. Les offres gratuites sont aussi
+limitées et non commerciales. Elle pourra être branchée plus tard.
+
+## Lancer le projet
+
+Prérequis : Node.js 20+ et Docker.
 
 ```bash
+cp .env.example .env.local
+npm install
+npm run db:up        # PostgreSQL sur le port 5434
+npm run db:migrate
+npm run db:seed      # données de démo, relatives à l'heure actuelle
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Relancez `npm run db:seed` avant chaque présentation : les retours du jour sont recalculés par rapport
+à l'heure courante.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+### Configuration (`.env.local`)
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+- **Stripe, mode test** : clé `sk_test_…` sur https://dashboard.stripe.com/test/apikeys →
+  `STRIPE_SECRET_KEY`. Carte de test : `4242 4242 4242 4242`, date future, CVC quelconque.
+- **Webhook en local** avec la [Stripe CLI](https://docs.stripe.com/stripe-cli) :
 
-## Learn More
+  ```bash
+  stripe listen --forward-to localhost:3100/api/stripe/webhook
+  ```
 
-To learn more about Next.js, take a look at the following resources:
+  puis copiez le `whsec_…` affiché dans `STRIPE_WEBHOOK_SECRET`. Sans webhook, le retour sur la page de
+  réservation confirme aussi le paiement (en interrogeant Stripe).
+- **Gmail** : `GMAIL_USER` et un mot de passe d'application (https://myaccount.google.com/apppasswords,
+  double authentification requise) dans `GMAIL_APP_PASSWORD`. En développement, sans ces valeurs, les
+  e-mails s'affichent dans la console du serveur.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Tests
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+```bash
+npm test
+```
 
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- Tarification (paliers, arrondis, limites)
+- Fuseau horaire de Paris (heure d'été, d'hiver, nuit du changement)
+- Machine à états du retour
+- Code e-mail (format, vérification)
+- Intégration avec la base : vérification e-mail (mauvais code, blocage après 5 essais), surréservation simultanée, enchaînement de séjours, paiement confirmé une seule fois

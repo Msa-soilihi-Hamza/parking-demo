@@ -1,0 +1,119 @@
+// Integration test against the Docker database (`npm run db:up` first).
+import { eq, inArray, sql } from "drizzle-orm";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { db } from "@/db";
+import { bookings, parkings } from "@/db/schema";
+import {
+  confirmPayment,
+  createUnverifiedBooking,
+  verifyEmailAndHold,
+  type NewBookingInput,
+} from "./bookings";
+import { hashCode } from "./email-code";
+
+// No real e-mails during tests.
+vi.mock("./mailer", () => ({
+  sendVerificationCode: vi.fn(),
+  sendBookingConfirmation: vi.fn(),
+}));
+
+const slug = `test-${Date.now()}`;
+const CODE = "123456";
+let parkingId: number;
+
+const stay = (dropoff: string, ret: string, name: string): NewBookingInput => ({
+  parkingSlug: slug,
+  dropoffAt: new Date(dropoff),
+  returnAt: new Date(ret),
+  returnTerminal: null,
+  customerName: name,
+  email: "test@exemple.fr",
+  phone: "0600000000",
+  plate: "TE-123-ST",
+  passengers: 1,
+});
+
+/** Creates a request and forces a known code, as if read from the e-mail. */
+async function requestWithKnownCode(input: NewBookingInput) {
+  const created = await createUnverifiedBooking(input);
+  if (!created.ok) throw new Error(created.error);
+  await db
+    .update(bookings)
+    .set({ emailCodeHash: hashCode(created.booking.id, CODE) })
+    .where(eq(bookings.id, created.booking.id));
+  return created.booking.id;
+}
+
+beforeAll(async () => {
+  const [parking] = await db
+    .insert(parkings)
+    .values({
+      slug,
+      name: "Parking de test",
+      airport: "Test",
+      address: "Test",
+      capacity: 1,
+      dailyRateCents: 1000,
+      terminals: ["T1"],
+    })
+    .returning();
+  parkingId = parking.id;
+  // Open the pool's connections up front so the race below really runs in parallel.
+  await Promise.all(Array.from({ length: 10 }, () => db.execute(sql`SELECT pg_sleep(0.05)`)));
+});
+
+afterAll(async () => {
+  const rows = await db.select({ id: bookings.id }).from(bookings).where(eq(bookings.parkingId, parkingId));
+  if (rows.length) await db.delete(bookings).where(inArray(bookings.id, rows.map((r) => r.id)));
+  await db.delete(parkings).where(eq(parkings.id, parkingId));
+});
+
+describe("e-mail verification", () => {
+  it("does not hold a spot before the e-mail is verified", async () => {
+    const first = await createUnverifiedBooking(stay("2027-05-01T08:00Z", "2027-05-03T08:00Z", "A"));
+    const second = await createUnverifiedBooking(stay("2027-05-01T08:00Z", "2027-05-03T08:00Z", "B"));
+    expect(first.ok && second.ok).toBe(true);
+  });
+
+  it("rejects a wrong code and counts the attempt", async () => {
+    const id = await requestWithKnownCode(stay("2027-06-01T08:00Z", "2027-06-02T08:00Z", "C"));
+    const result = await verifyEmailAndHold(id, "000000");
+    expect(result.ok).toBe(false);
+    const [row] = await db.select().from(bookings).where(eq(bookings.id, id));
+    expect(row.emailCodeAttempts).toBe(1);
+    expect(row.status).toBe("pending_verification");
+  });
+
+  it("locks the request after 5 wrong codes, even with the right one", async () => {
+    const id = await requestWithKnownCode(stay("2027-06-10T08:00Z", "2027-06-11T08:00Z", "D"));
+    for (let i = 0; i < 5; i++) await verifyEmailAndHold(id, "000000");
+    expect((await verifyEmailAndHold(id, CODE)).ok).toBe(false);
+  });
+});
+
+describe("holding the last spot", () => {
+  it("lets only one of ten simultaneous customers take the last spot", async () => {
+    const ids = await Promise.all(
+      Array.from({ length: 10 }, (_, i) =>
+        requestWithKnownCode(stay("2027-03-01T08:00Z", "2027-03-05T08:00Z", `Client ${i}`)),
+      ),
+    );
+    const results = await Promise.all(ids.map((id) => verifyEmailAndHold(id, CODE)));
+    expect(results.filter((r) => r.ok)).toHaveLength(1);
+    expect(results.filter((r) => !r.ok)).toHaveLength(9);
+  });
+
+  it("accepts a stay that starts after the previous car has left", async () => {
+    const id = await requestWithKnownCode(stay("2027-03-05T09:00Z", "2027-03-07T09:00Z", "Suivant"));
+    expect((await verifyEmailAndHold(id, CODE)).ok).toBe(true);
+  });
+});
+
+describe("payment", () => {
+  it("confirms a payment only once, even if Stripe sends the event twice", async () => {
+    const id = await requestWithKnownCode(stay("2027-04-01T08:00Z", "2027-04-02T08:00Z", "Stripe"));
+    expect((await verifyEmailAndHold(id, CODE)).ok).toBe(true);
+    expect(await confirmPayment(id)).toBe(true);
+    expect(await confirmPayment(id)).toBe(false);
+  });
+});
