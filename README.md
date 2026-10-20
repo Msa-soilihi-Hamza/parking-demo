@@ -85,6 +85,26 @@ Relancez `npm run db:seed` avant chaque présentation : les retours du jour sont
   double authentification requise) dans `GMAIL_APP_PASSWORD`. En développement, sans ces valeurs, les
   e-mails s'affichent dans la console du serveur.
 
+## Mise en production (Vercel + Neon)
+
+- **Base de données : Neon** (PostgreSQL managé). Les identifiants sont dans `.env.neon`, exclu de Git
+  (créé par `neon deploy`). L'application utilise l'adresse **pooled** (`DATABASE_URL`, hôte `-pooler`),
+  les migrations l'adresse **directe** (`DATABASE_URL_UNPOOLED`), avec `sslmode=verify-full`.
+- **Application : Vercel.** Le backend (Server Actions, webhook Stripe, `after()`) tourne dans les
+  fonctions Vercel ; `attachDatabasePool` ferme proprement les connexions inutilisées.
+
+```bash
+npm run db:migrate:neon   # applique les migrations sur Neon
+npm run db:seed:neon      # données de démo (garde les vraies réservations)
+npm run smoke:neon        # parcours complet sur Neon, puis nettoyage
+```
+
+Variables à définir dans Vercel : `DATABASE_URL` (pooled), `APP_URL` (adresse du site),
+`STRIPE_SECRET_KEY` (`sk_test_…`), `STRIPE_WEBHOOK_SECRET` (endpoint
+`https://…/api/stripe/webhook` créé dans le tableau de bord Stripe, mode test, événements
+`checkout.session.completed` et `checkout.session.expired`), `GMAIL_USER`, `GMAIL_APP_PASSWORD`,
+`SHUTTLE_ACCESS_CODE`.
+
 ## Tests
 
 ```bash

@@ -11,10 +11,16 @@
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "db:seed": "tsx --env-file=.env.local src/db/seed.ts",
-    "test": "vitest run"
+    "test": "vitest run",
+    "db:migrate:neon": "drizzle-kit migrate --config drizzle.neon.config.ts",
+    "db:seed:neon": "tsx --env-file=.env.neon src/db/seed.ts",
+    "smoke:neon": "tsx --env-file=.env.neon scripts/smoke-test.ts"
   },
   "dependencies": {
     "@base-ui/react": "^1.9.0",
+    "@neon/config": "^1.9.2",
+    "@neon/env": "^1.6.3",
+    "@vercel/functions": "^3.10.1",
     "class-variance-authority": "^0.7.1",
     "cn": "^0.5.0",
     "date-fns": "^4.4.0",
