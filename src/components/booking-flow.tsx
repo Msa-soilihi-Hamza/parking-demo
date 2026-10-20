@@ -32,6 +32,7 @@ export type ParkingOption = {
 
 type Props = {
   parkings: ParkingOption[];
+  defaultParking: string;
   /** "2026-10-20T08:00" in Paris time */
   defaultDropoff: string;
   defaultReturn: string;
@@ -45,12 +46,12 @@ const PASSENGER_OPTIONS = [1, 2, 3, 4, 5, 6, 7, 8].map((n) => ({
   label: `${n} passager${n > 1 ? "s" : ""}`,
 }));
 
-export function BookingFlow({ parkings, defaultDropoff, defaultReturn, minDay }: Props) {
+export function BookingFlow({ parkings, defaultParking, defaultDropoff, defaultReturn, minDay }: Props) {
   const [details, submitDetails, submitting] = useActionState<DetailsState, FormData>(
     submitDetailsAction,
     {},
   );
-  const [slug, setSlug] = useState(parkings[0]?.slug ?? "");
+  const [slug, setSlug] = useState(defaultParking);
   const [dates, setDates] = useState<StayDates>({
     from: defaultDropoff.slice(0, 10),
     to: defaultReturn.slice(0, 10),

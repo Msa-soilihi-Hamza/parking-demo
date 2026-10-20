@@ -8,6 +8,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import { SUPPORT_PHONE, SUPPORT_PHONE_HREF } from "@/lib/contact";
 import { BAGS_BUTTON_OPENS_BEFORE_MS, bagsButtonOpen } from "@/lib/pickup";
 import { formatEuros } from "@/lib/pricing";
 import { formatDateTime, formatTime } from "@/lib/time";
@@ -93,7 +94,11 @@ async function Reservation({
           <CardHeader>
             <CardTitle>Votre retour</CardTitle>
             <CardDescription>
-              Pas besoin d&apos;appeler : prévenez la navette d&apos;un seul geste.
+              Bagages en main, un seul bouton prévient la navette. Un imprévu ? Appelez le{" "}
+              <a href={SUPPORT_PHONE_HREF} className="font-medium text-foreground hover:underline">
+                {SUPPORT_PHONE}
+              </a>
+              .
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-6">

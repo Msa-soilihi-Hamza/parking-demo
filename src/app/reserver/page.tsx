@@ -3,7 +3,7 @@ import { Suspense } from "react";
 import { BookingFlow } from "@/components/booking-flow";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Skeleton } from "@/components/ui/skeleton";
-import { dateToParisLocal, parisDay, parisDayBounds } from "@/lib/time";
+import { dateToParisLocal, parisDay, parisDayBounds, parisLocalToDate } from "@/lib/time";
 import { listParkings } from "@/server/bookings";
 
 export const metadata = { title: "Réserver · Escale Parking" };
@@ -24,12 +24,17 @@ export default function BookPage(props: PageProps<"/reserver">) {
 
 async function Booking({ searchParams }: Pick<PageProps<"/reserver">, "searchParams">) {
   await connection();
-  const [{ paiement }, parkings] = await Promise.all([searchParams, listParkings()]);
+  const [params, parkings] = await Promise.all([searchParams, listParkings()]);
+  const { paiement } = params;
 
-  // Default stay: tomorrow 08:00 → one week later 08:00 (Paris time).
+  // Default stay: tomorrow 08:00 → one week later 08:00 (Paris time),
+  // unless the landing page's quick quote already chose it.
   const tomorrow = parisDayBounds(new Date(), 1).start;
   const nextWeek = parisDayBounds(new Date(), 8).start;
   const at8 = (d: Date) => dateToParisLocal(new Date(d.getTime() + 8 * 3600_000));
+  const fromQuery = (value: unknown) =>
+    typeof value === "string" && parisLocalToDate(value) ? value : null;
+  const parking = parkings.find((p) => p.slug === params.parking)?.slug ?? parkings[0]?.slug ?? "";
 
   return (
     <div className="space-y-6">
@@ -48,8 +53,9 @@ async function Booking({ searchParams }: Pick<PageProps<"/reserver">, "searchPar
           dailyRateCents: p.dailyRateCents,
           terminals: p.terminals,
         }))}
-        defaultDropoff={at8(tomorrow)}
-        defaultReturn={at8(nextWeek)}
+        defaultParking={parking}
+        defaultDropoff={fromQuery(params.dropoffAt) ?? at8(tomorrow)}
+        defaultReturn={fromQuery(params.returnAt) ?? at8(nextWeek)}
         minDay={parisDay(new Date())}
       />
     </div>

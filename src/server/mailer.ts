@@ -1,5 +1,6 @@
 import nodemailer from "nodemailer";
 import type { Booking, Parking } from "@/db/schema";
+import { SUPPORT_PHONE } from "@/lib/contact";
 import { formatEuros } from "@/lib/pricing";
 import { formatDateTime } from "@/lib/time";
 import { appUrl } from "@/server/stripe";
@@ -64,7 +65,7 @@ export async function sendBookingConfirmation(booking: Booking, parking: Parking
     <tr><td style="color:#737373;padding:4px 0">Atterrissage retour</td><td>${formatDateTime(booking.returnAt)}</td></tr>
     <tr><td style="color:#737373;padding:4px 0">Montant payé</td><td>${formatEuros(booking.priceCents)}</td></tr>
   </table>
-  <p>À votre retour, pas besoin d'appeler : ouvrez votre réservation et appuyez sur « J'ai mes bagages ».</p>
+  <p>À votre retour, ouvrez votre réservation et appuyez sur « J'ai mes bagages » : la navette vient vous chercher. Un imprévu ? Appelez le ${SUPPORT_PHONE}, 24h/24.</p>
   <p><a href="${link}" style="display:inline-block;background:#b91c1c;color:#fff;padding:12px 20px;border-radius:8px;text-decoration:none">Ouvrir ma réservation</a></p>`),
   );
 }

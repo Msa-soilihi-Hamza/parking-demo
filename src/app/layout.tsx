@@ -1,12 +1,21 @@
 import type { Metadata } from "next";
-import { Geist_Mono, Inter } from "next/font/google";
+import { Geist_Mono, Instrument_Serif, Inter } from "next/font/google";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Toaster } from "@/components/ui/sonner";
+import { SUPPORT_PHONE, SUPPORT_PHONE_HREF } from "@/lib/contact";
 import "./globals.css";
 import { cn } from "@/lib/utils";
 
 const inter = Inter({subsets:['latin'],variable:'--font-sans'});
+
+// Display accent for a few words in headlines.
+const instrumentSerif = Instrument_Serif({
+  variable: "--font-serif",
+  subsets: ["latin"],
+  weight: "400",
+  style: ["normal", "italic"],
+});
 
 const geistMono = Geist_Mono({
   variable: "--font-geist-mono",
@@ -21,7 +30,7 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
-    <html lang="fr" className={cn("h-full", "antialiased", geistMono.variable, "font-sans", inter.variable)}>
+    <html lang="fr" className={cn("h-full", "antialiased", geistMono.variable, instrumentSerif.variable, "font-sans", inter.variable)}>
       {/* Browser extensions add attributes to <body> before React hydrates. */}
       <body className="flex min-h-full flex-col" suppressHydrationWarning>
         <header className="sticky top-0 z-40 border-b bg-background/80 backdrop-blur">
@@ -43,7 +52,12 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
         <main className="flex-1">{children}</main>
         <footer className="border-t">
           <div className="mx-auto flex max-w-5xl flex-col gap-1 px-4 py-6 text-sm text-muted-foreground sm:flex-row sm:justify-between sm:px-6">
-            <span>Escale · Orly &amp; Roissy-CDG</span>
+            <span>
+              Escale · Orly &amp; Roissy-CDG · Assistance 24h/24 :{" "}
+              <a href={SUPPORT_PHONE_HREF} className="text-foreground hover:underline">
+                {SUPPORT_PHONE}
+              </a>
+            </span>
             <span>Projet de démonstration · marque fictive · Stripe en mode test</span>
           </div>
         </footer>

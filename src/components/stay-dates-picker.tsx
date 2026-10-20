@@ -35,15 +35,21 @@ type Props = {
   onChange: (value: StayDates) => void;
   /** First selectable day ("2026-10-20") */
   minDay: string;
+  /** "stacked" puts the dates above the two times, for narrow cards. */
+  layout?: "inline" | "stacked";
 };
 
 /** One calendar for the whole stay, plus the drop-off and landing times. */
-export function StayDatesPicker({ value, onChange, minDay }: Props) {
+export function StayDatesPicker({ value, onChange, minDay, layout = "inline" }: Props) {
   const range: DateRange = { from: fromDay(value.from), to: value.to ? fromDay(value.to) : undefined };
 
   return (
-    <div className="grid gap-4 sm:grid-cols-[1fr_auto_auto]">
-      <Field>
+    <div
+      className={
+        layout === "inline" ? "grid gap-4 sm:grid-cols-[1fr_auto_auto]" : "grid grid-cols-2 gap-3"
+      }
+    >
+      <Field className={layout === "stacked" ? "col-span-2" : undefined}>
         <FieldLabel>Dates du séjour</FieldLabel>
         <Popover>
           <PopoverTrigger
