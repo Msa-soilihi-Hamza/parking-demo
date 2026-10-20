@@ -4,6 +4,7 @@ import { refresh } from "next/cache";
 import { after } from "next/server";
 import { advancePickup, cancelPickupRequest, getBookingByToken } from "@/server/bookings";
 import { sendPickupRequestReceived } from "@/server/mailer";
+import { submitReview } from "@/server/reviews";
 
 export async function markBagsReadyAction(formData: FormData) {
   const token = String(formData.get("token") ?? "");
@@ -31,6 +32,20 @@ export async function markBagsReadyAction(formData: FormData) {
     });
   }
   refresh();
+}
+
+export type ReviewFormState = { error?: string };
+
+export async function submitReviewAction(_prev: ReviewFormState, formData: FormData): Promise<ReviewFormState> {
+  const result = await submitReview({
+    accessToken: String(formData.get("token") ?? ""),
+    rating: Number(formData.get("rating")),
+    comment: String(formData.get("comment") ?? "") || null,
+    publishConsent: formData.get("publishConsent") === "on",
+  });
+  if (!result.ok) return { error: result.error };
+  refresh();
+  return {};
 }
 
 export async function cancelPickupRequestAction(formData: FormData) {

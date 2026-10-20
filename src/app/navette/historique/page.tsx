@@ -5,6 +5,7 @@ import { DateJump } from "@/components/shuttle/date-jump";
 import {
   Accent,
   DayStrip,
+  LOW_RATING,
   Empty,
   PageTitle,
   Rows,
@@ -48,6 +49,11 @@ async function History({ searchParams }: Pick<PageProps<"/navette/historique">, 
   const waits = week.map(waitMinutes).filter((w): w is number => w !== null);
   const average = waits.length ? Math.round(waits.reduce((a, b) => a + b, 0) / waits.length) : null;
   const dayPassengers = dayRows.reduce((sum, r) => sum + r.passengers, 0);
+  const ratings = week.map((r) => r.rating).filter((r): r is number => r != null);
+  const averageRating = ratings.length
+    ? (ratings.reduce((a, b) => a + b, 0) / ratings.length).toLocaleString("fr-FR", { maximumFractionDigits: 1 })
+    : null;
+  const toCallBack = dayRows.filter((r) => r.rating != null && r.rating <= LOW_RATING).length;
 
   return (
     <div className="mx-auto max-w-5xl space-y-10 px-4 py-12 sm:px-6">
@@ -57,7 +63,15 @@ async function History({ searchParams }: Pick<PageProps<"/navette/historique">, 
         <PageTitle eyebrow="7 derniers jours">
           {week.length} clients <Accent>bien rentrés.</Accent>
         </PageTitle>
-        {average !== null && <p className="text-muted-foreground">Attente moyenne : {average} min après le bouton.</p>}
+        <p className="text-muted-foreground">
+          {average !== null && <>Attente moyenne : {average} min après le bouton.</>}
+          {averageRating !== null && (
+            <>
+              {" "}
+              Note moyenne : <span className="text-foreground">★ {averageRating}/5</span> ({ratings.length} avis).
+            </>
+          )}
+        </p>
       </div>
 
       <div className="space-y-4">
@@ -80,6 +94,12 @@ async function History({ searchParams }: Pick<PageProps<"/navette/historique">, 
           <p className="text-sm text-muted-foreground">
             {dayRows.length} client{dayRows.length > 1 ? "s" : ""} · {dayPassengers} passager
             {dayPassengers > 1 ? "s" : ""}
+            {toCallBack > 0 && (
+              <span className="font-medium text-primary">
+                {" "}
+                · {toCallBack} avis négatif{toCallBack > 1 ? "s" : ""} à rappeler
+              </span>
+            )}
           </p>
         </div>
         {dayRows.length === 0 ? (
@@ -94,6 +114,7 @@ async function History({ searchParams }: Pick<PageProps<"/navette/historique">, 
                 name: `${r.customerName} · ${r.passengers} pers.`,
                 detail: `${r.returnTerminal ?? ""}${wait === null ? "" : ` · ${wait} min d'attente`}`,
                 status: r.pickupStatus,
+                rating: r.rating,
               };
             })}
           />

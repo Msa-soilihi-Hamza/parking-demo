@@ -8,7 +8,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { connection } from "next/server";
-import { Suspense } from "react";
+import { cache, Suspense } from "react";
 import { QuickQuote } from "@/components/quick-quote";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -16,6 +16,7 @@ import { SUPPORT_PHONE, SUPPORT_PHONE_HREF } from "@/lib/contact";
 import { formatEuros, quote } from "@/lib/pricing";
 import { dateToParisLocal, parisDay, parisDayBounds } from "@/lib/time";
 import { listParkings } from "@/server/bookings";
+import { listPublishedReviews } from "@/server/reviews";
 
 const AIRPORT_CODES: Record<string, { code: string; label: string }> = {
   orly: { code: "ORY", label: "Orly" },
@@ -36,8 +37,8 @@ const SECURITY = [
   "Entrée et sortie contrôlées",
 ];
 
-// Fictional reviews: this is a demo with a made-up brand (said under the section).
-const REVIEWS = [
+// Fictional reviews, shown only until enough real ones are published (said under the section).
+const FICTIONAL_REVIEWS = [
   {
     stars: 5,
     text: "Réservé en deux minutes sur mon téléphone, le prix était affiché tout de suite. Au retour, un appui sur le bouton et la navette était là.",
@@ -76,8 +77,30 @@ const REVIEWS = [
   },
 ];
 
-const averageRating = REVIEWS.reduce((sum, r) => sum + r.stars, 0) / REVIEWS.length;
-const ratingLabel = averageRating.toLocaleString("fr-FR", { maximumFractionDigits: 1 });
+/** Real reviews replace the fictional ones from this many published reviews. */
+const MIN_REAL_REVIEWS = 3;
+
+type LandingReview = { id: string; stars: number; text: string; name: string; trip: string };
+
+const monthYear = new Intl.DateTimeFormat("fr-FR", { month: "long", year: "numeric", timeZone: "Europe/Paris" });
+
+// One query per request, shared by the key number and the reviews section.
+const getLandingReviews = cache(async () => {
+  await connection();
+  const published = await listPublishedReviews(6);
+  const real = published.length >= MIN_REAL_REVIEWS;
+  const items: LandingReview[] = real
+    ? published.map((r) => ({
+        id: r.id,
+        stars: r.rating,
+        text: r.comment,
+        name: r.authorName,
+        trip: `${r.parkingName.replace("Escale ", "")} · ${monthYear.format(r.createdAt)}`,
+      }))
+    : FICTIONAL_REVIEWS.map((r) => ({ ...r, id: r.name }));
+  const average = items.reduce((sum, r) => sum + r.stars, 0) / items.length;
+  return { real, items, average: average.toLocaleString("fr-FR", { maximumFractionDigits: 1 }) };
+});
 
 export default function LandingPage() {
   return (
@@ -125,7 +148,14 @@ export default function LandingPage() {
             { value: "2 min", label: "pour réserver" },
             { value: "24h/24", label: "sous surveillance" },
             { value: "-40 %", label: "dès le 8e jour" },
-            { value: `${ratingLabel}/5`, label: "note de nos clients" },
+            {
+              value: (
+                <Suspense fallback="—">
+                  <AverageRating />
+                </Suspense>
+              ),
+              label: "note de nos clients",
+            },
           ].map((s, i) => (
             <div
               key={s.label}
@@ -231,29 +261,9 @@ export default function LandingPage() {
       </section>
 
       {/* Reviews */}
-      <section className="mx-auto max-w-6xl px-4 py-24 sm:px-6">
-        <div className="flex flex-wrap items-end justify-between gap-4">
-          <h2 className="text-3xl font-semibold tracking-tight sm:text-4xl">
-            Ils sont <span className="font-serif font-normal italic">bien rentrés.</span>
-          </h2>
-          <p className="flex items-center gap-2 text-sm">
-            <Stars count={5} /> <span className="font-medium">{ratingLabel}/5</span>
-          </p>
-        </div>
-        <div className="mt-12 columns-1 gap-6 sm:columns-2 lg:columns-3">
-          {REVIEWS.map((review) => (
-            <figure key={review.name} className="mb-6 break-inside-avoid rounded-3xl border p-6">
-              <Stars count={review.stars} />
-              <blockquote className="mt-4 text-[15px] leading-relaxed">« {review.text} »</blockquote>
-              <figcaption className="mt-5 text-sm">
-                <span className="font-medium">{review.name}</span>
-                <span className="text-muted-foreground"> · {review.trip}</span>
-              </figcaption>
-            </figure>
-          ))}
-        </div>
-        <p className="text-xs text-muted-foreground">Avis fictifs : projet de démonstration.</p>
-      </section>
+      <Suspense fallback={<Skeleton className="mx-auto my-24 h-96 max-w-6xl" />}>
+        <ReviewsSection />
+      </Suspense>
 
       {/* Final call to action */}
       <section className="mx-auto max-w-6xl px-4 pb-24 sm:px-6">
@@ -277,6 +287,44 @@ export default function LandingPage() {
         (code <code className="font-mono">navette</code>)
       </section>
     </>
+  );
+}
+
+async function AverageRating() {
+  const { average } = await getLandingReviews();
+  return <>{average}/5</>;
+}
+
+async function ReviewsSection() {
+  const { real, items, average } = await getLandingReviews();
+  return (
+    <section className="mx-auto max-w-6xl px-4 py-24 sm:px-6">
+      <div className="flex flex-wrap items-end justify-between gap-4">
+        <h2 className="text-3xl font-semibold tracking-tight sm:text-4xl">
+          Ils sont <span className="font-serif font-normal italic">bien rentrés.</span>
+        </h2>
+        <p className="flex items-center gap-2 text-sm">
+          <Stars count={5} /> <span className="font-medium">{average}/5</span>
+        </p>
+      </div>
+      <div className="mt-12 columns-1 gap-6 sm:columns-2 lg:columns-3">
+        {items.map((review) => (
+          <figure key={review.id} className="mb-6 break-inside-avoid rounded-3xl border p-6">
+            <Stars count={review.stars} />
+            <blockquote className="mt-4 text-[15px] leading-relaxed">« {review.text} »</blockquote>
+            <figcaption className="mt-5 text-sm">
+              <span className="font-medium">{review.name}</span>
+              <span className="text-muted-foreground"> · {review.trip}</span>
+            </figcaption>
+          </figure>
+        ))}
+      </div>
+      <p className="text-xs text-muted-foreground">
+        {real
+          ? "Avis laissés par nos clients après leur retour, publiés avec leur accord."
+          : "Avis fictifs : projet de démonstration."}
+      </p>
+    </section>
   );
 }
 

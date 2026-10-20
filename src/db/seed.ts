@@ -6,7 +6,7 @@ import { quote } from "../lib/pricing";
 import type { PickupStatus } from "../lib/pickup";
 import { parisDayBounds } from "../lib/time";
 import { db } from "./index";
-import { bookings, parkings } from "./schema";
+import { bookings, parkings, reviews } from "./schema";
 
 /** The customer link used in the demo: /reservation/demo-retour */
 export const DEMO_TOKEN = "demo-retour";
@@ -184,7 +184,23 @@ async function main() {
     returnTerminal: null,
   });
 
-  await db.insert(bookings).values(rows);
+  const inserted = await db
+    .insert(bookings)
+    .values(rows)
+    .returning({ id: bookings.id, pickupStatus: bookings.pickupStatus, customerName: bookings.customerName });
+
+  // Ratings on about two thirds of the finished trips, for the shuttle team's history.
+  // Never publishable: the public site must not present seeded reviews as real ones.
+  const ratings = [5, 5, 5, 4, 5, 4, 3, 5, 2, 5, 4, 1];
+  const demoReviews = inserted
+    .filter((b) => b.pickupStatus === "picked_up" && rand() < 0.65)
+    .map((b) => ({
+      bookingId: b.id,
+      rating: pick(ratings),
+      publishConsent: false,
+      authorName: b.customerName.split(" ")[0],
+    }));
+  if (demoReviews.length) await db.insert(reviews).values(demoReviews);
   const [{ kept }] = (
     await db.execute<{ kept: number }>(
       sql`SELECT count(*)::int AS kept FROM bookings WHERE reference NOT LIKE 'ESC-DEMO%'`,

@@ -141,7 +141,18 @@ export function waitMinutes(row: ShuttleRow): number | null {
   return Math.max(0, Math.round((row.pickedUpAt.getTime() - row.bagsReadyAt.getTime()) / 60000));
 }
 
-type RowItem = { id: string; time: string; name: string; detail: string; status?: PickupStatus };
+type RowItem = {
+  id: string;
+  time: string;
+  name: string;
+  detail: string;
+  status?: PickupStatus;
+  /** Customer review, 1–5; 1 or 2 shows in red so the team calls them back. */
+  rating?: number | null;
+};
+
+/** A day with a review at or below this is flagged for a call back. */
+export const LOW_RATING = 2;
 
 /** Quiet one-line rows: time · name · detail · status colour. */
 export function Rows({ items }: { items: RowItem[] }) {
@@ -152,6 +163,17 @@ export function Rows({ items }: { items: RowItem[] }) {
           <span className="w-12 shrink-0 font-mono text-sm tabular-nums">{item.time}</span>
           <span className="min-w-0 flex-1 truncate">{item.name}</span>
           <span className="hidden shrink-0 text-sm text-muted-foreground sm:inline">{item.detail}</span>
+          {item.rating != null && (
+            <span
+              title={item.rating <= LOW_RATING ? "Avis négatif : à rappeler" : "Avis du client"}
+              className={cn(
+                "shrink-0 text-sm tabular-nums",
+                item.rating <= LOW_RATING ? "font-semibold text-primary" : "text-muted-foreground",
+              )}
+            >
+              ★ {item.rating}
+            </span>
+          )}
           {item.status && <StatusPill status={item.status} />}
         </li>
       ))}

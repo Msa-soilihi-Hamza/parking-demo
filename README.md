@@ -10,7 +10,7 @@ Projet de démonstration (marque et données fictives) : un parcours de réserva
 |---|---|
 | `/` | Landing page : promesse, fonctionnement, tarifs |
 | `/reserver` | Parking et dates avec **prix immédiat**, coordonnées, **vérification de l'e-mail par code à 6 chiffres**, puis **paiement Stripe** (mode test) |
-| `/reservation/[token]` | Lien personnel du client (reçu par e-mail) : bouton « J'ai mes bagages » le jour du retour, suivi en direct |
+| `/reservation/[token]` | Lien personnel du client (reçu par e-mail) : bouton « J'ai mes bagages » à tout moment (annulable tant que la navette n'est pas partie), suivi en direct, puis avis (étoiles + commentaire) |
 | `/navette` | Équipe navette : clients à récupérer maintenant, retours prévus par créneau (aujourd'hui / demain) |
 
 Pour tester sans réserver : `/reservation/demo-retour` (avion qui vient d'atterrir) et `/navette`
@@ -41,6 +41,9 @@ Pour tester sans réserver : `/reservation/demo-retour` (avion qui vient d'atter
 - **Fuseau horaire** : les heures saisies sont en heure de Paris, stockées en UTC. La durée facturée se
   mesure sur l'horloge de Paris : l'heure en plus du changement d'heure d'octobre n'est pas facturée
   comme un jour.
+- **Avis clients** : un seul par réservation, possible uniquement après la prise en charge (contrainte
+  d'unicité en base). Publiés sur la landing seulement avec l'accord du client, prénom + initiale, **quelle
+  que soit la note**. Côté navette, les notes de 1 ou 2 ressortent en rouge pour rappeler le client.
 - **Temps réel** par rafraîchissement automatique toutes les 4 à 5 secondes : simple et suffisant à cette
   échelle (WebSocket ou SSE envisageables ensuite).
 
@@ -92,4 +95,5 @@ npm test
 - Fuseau horaire de Paris (heure d'été, d'hiver, nuit du changement)
 - Machine à états du retour
 - Code e-mail (format, vérification)
-- Intégration avec la base : vérification e-mail (mauvais code, blocage après 5 essais), surréservation simultanée, enchaînement de séjours, paiement confirmé une seule fois
+- Nom public des avis (« Sarah M. »)
+- Intégration avec la base : vérification e-mail (mauvais code, blocage après 5 essais), surréservation simultanée, enchaînement de séjours, paiement confirmé une seule fois, annulation du bouton, avis (avant/après prise en charge, un seul)

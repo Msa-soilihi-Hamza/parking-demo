@@ -2,7 +2,7 @@
 import { eq, inArray, sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { db } from "@/db";
-import { bookings, parkings } from "@/db/schema";
+import { bookings, parkings, reviews } from "@/db/schema";
 import {
   advancePickup,
   cancelPickupRequest,
@@ -12,6 +12,7 @@ import {
   type NewBookingInput,
 } from "./bookings";
 import { hashCode } from "./email-code";
+import { submitReview } from "./reviews";
 
 // No real e-mails during tests.
 vi.mock("./mailer", () => ({
@@ -143,5 +144,41 @@ describe("cancelling the bags button", () => {
     await advancePickup({ accessToken: booking.accessToken }, "scheduled", "bags_ready");
     await advancePickup({ id: booking.id }, "bags_ready", "en_route");
     expect(await cancelPickupRequest(booking.accessToken)).toBe(false);
+  });
+});
+
+describe("reviews", () => {
+  async function pickedUpBooking(from: string, to: string, name: string) {
+    const id = await requestWithKnownCode(stay(from, to, name));
+    await verifyEmailAndHold(id, CODE);
+    await confirmPayment(id);
+    const [row] = await db.select().from(bookings).where(eq(bookings.id, id));
+    return row;
+  }
+
+  it("refuses a review before the customer is picked up", async () => {
+    const booking = await pickedUpBooking("2027-08-01T08:00Z", "2027-08-02T08:00Z", "Avant Retour");
+    const result = await submitReview({ accessToken: booking.accessToken, rating: 5, comment: null, publishConsent: true });
+    expect(result.ok).toBe(false);
+  });
+
+  it("accepts one review after the pickup, and only one", async () => {
+    const booking = await pickedUpBooking("2027-08-10T08:00Z", "2027-08-11T08:00Z", "sarah martin");
+    await advancePickup({ accessToken: booking.accessToken }, "scheduled", "bags_ready");
+    await advancePickup({ id: booking.id }, "bags_ready", "en_route");
+    await advancePickup({ id: booking.id }, "en_route", "picked_up");
+
+    const first = await submitReview({ accessToken: booking.accessToken, rating: 4, comment: "  Top  ", publishConsent: true });
+    const second = await submitReview({ accessToken: booking.accessToken, rating: 1, comment: null, publishConsent: true });
+    expect(first.ok).toBe(true);
+    expect(second.ok).toBe(false);
+
+    const [review] = await db.select().from(reviews).where(eq(reviews.bookingId, booking.id));
+    expect(review).toMatchObject({ rating: 4, comment: "Top", authorName: "Sarah M." });
+  });
+
+  it("rejects a rating outside 1 to 5", async () => {
+    const result = await submitReview({ accessToken: "whatever", rating: 6, comment: null, publishConsent: false });
+    expect(result.ok).toBe(false);
   });
 });

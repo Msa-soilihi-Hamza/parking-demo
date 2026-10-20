@@ -1,4 +1,7 @@
+import { sql } from "drizzle-orm";
 import {
+  boolean,
+  check,
   index,
   integer,
   pgEnum,
@@ -75,5 +78,29 @@ export const bookings = pgTable(
   ],
 );
 
+/** One review per booking, left once the customer has been picked up. */
+export const reviews = pgTable(
+  "reviews",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    bookingId: uuid("booking_id")
+      .notNull()
+      .unique()
+      .references(() => bookings.id, { onDelete: "cascade" }),
+    rating: integer("rating").notNull(),
+    comment: text("comment"),
+    // Only shown on the public site when the customer agreed to it.
+    publishConsent: boolean("publish_consent").notNull().default(false),
+    // "Sarah M.": first name and initial, never the full name.
+    authorName: text("author_name").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    check("reviews_rating_range", sql`${t.rating} BETWEEN 1 AND 5`),
+    index("reviews_published_idx").on(t.publishConsent, t.createdAt),
+  ],
+);
+
 export type Parking = typeof parkings.$inferSelect;
 export type Booking = typeof bookings.$inferSelect;
+export type Review = typeof reviews.$inferSelect;

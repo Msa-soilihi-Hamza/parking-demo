@@ -1,4 +1,4 @@
-import { CircleCheckIcon } from "lucide-react";
+import { CircleCheckIcon, StarIcon } from "lucide-react";
 import { notFound } from "next/navigation";
 import { connection } from "next/server";
 import { Suspense } from "react";
@@ -6,6 +6,7 @@ import { AutoRefresh } from "@/components/auto-refresh";
 import { BagsForm } from "@/components/bags-form";
 import { CancelRequestButton } from "@/components/cancel-request-button";
 import { PickupTimeline } from "@/components/pickup-timeline";
+import { ReviewForm } from "@/components/review-form";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -14,6 +15,7 @@ import { SUPPORT_PHONE, SUPPORT_PHONE_HREF } from "@/lib/contact";
 import { formatEuros } from "@/lib/pricing";
 import { formatDateTime, formatTime } from "@/lib/time";
 import { confirmPayment, getBookingByToken } from "@/server/bookings";
+import { getReviewForBooking } from "@/server/reviews";
 import { getStripe } from "@/server/stripe";
 
 export const metadata = { title: "Ma réservation · Escale Parking" };
@@ -52,6 +54,7 @@ async function Reservation({
   }
 
   const { booking, parking } = found;
+  const review = booking.pickupStatus === "picked_up" ? await getReviewForBooking(booking.id) : null;
   const waiting = booking.pickupStatus === "bags_ready" || booking.pickupStatus === "en_route";
 
   return (
@@ -156,6 +159,37 @@ async function Reservation({
             )}
             {booking.pickupStatus === "picked_up" && (
               <p className="rounded-lg bg-muted px-4 py-3 text-sm">Bon retour ! Votre véhicule vous attend.</p>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* The last step: once picked up, the customer can rate their return. */}
+      {booking.status === "confirmed" && booking.pickupStatus === "picked_up" && (
+        <Card id="avis" className="scroll-mt-20">
+          <CardHeader>
+            <CardTitle>{review ? "Merci pour votre avis" : "Comment s'est passé votre retour ?"}</CardTitle>
+            <CardDescription>
+              {review
+                ? "Il aide l'équipe navette à s'améliorer."
+                : "Une note et, si vous voulez, un mot : ça prend 10 secondes."}
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            {review ? (
+              <div className="space-y-2">
+                <p className="flex gap-0.5" aria-label={`${review.rating} sur 5`}>
+                  {[1, 2, 3, 4, 5].map((n) => (
+                    <StarIcon
+                      key={n}
+                      className={n <= review.rating ? "size-5 fill-primary text-primary" : "size-5 text-muted-foreground/30"}
+                    />
+                  ))}
+                </p>
+                {review.comment && <p className="text-sm text-muted-foreground">« {review.comment} »</p>}
+              </div>
+            ) : (
+              <ReviewForm token={token} />
             )}
           </CardContent>
         </Card>

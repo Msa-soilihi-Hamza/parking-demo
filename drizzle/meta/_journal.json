@@ -15,6 +15,13 @@
       "when": 1792425024895,
       "tag": "0001_email_verification",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1792520745211,
+      "tag": "0002_reviews",
+      "breakpoints": true
     }
   ]
 }

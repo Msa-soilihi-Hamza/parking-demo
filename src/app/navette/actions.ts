@@ -3,8 +3,13 @@
 import { refresh } from "next/cache";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
+import { after } from "next/server";
+import { eq } from "drizzle-orm";
+import { db } from "@/db";
+import { bookings } from "@/db/schema";
 import { PICKUP_STATUSES, type PickupStatus } from "@/lib/pickup";
 import { advancePickup } from "@/server/bookings";
+import { sendReviewRequest } from "@/server/mailer";
 import { hasShuttleAccess, SHUTTLE_COOKIE, shuttleAccessCode } from "@/server/shuttle-access";
 
 export async function shuttleLoginAction(_prev: string | null, formData: FormData) {
@@ -29,7 +34,19 @@ export async function advancePickupAction(formData: FormData) {
   if (!PICKUP_STATUSES.includes(from) || !PICKUP_STATUSES.includes(to)) {
     throw new Error("Statut invalide.");
   }
-  await advancePickup({ id }, from, to);
+  const moved = await advancePickup({ id }, from, to);
+
+  // Once the customer is in the shuttle, ask for a review (after the response).
+  if (moved && to === "picked_up") {
+    after(async () => {
+      try {
+        const [booking] = await db.select().from(bookings).where(eq(bookings.id, id));
+        if (booking) await sendReviewRequest(booking);
+      } catch (error) {
+        console.error("Review request e-mail failed", error);
+      }
+    });
+  }
   refresh();
 }
 

@@ -94,6 +94,7 @@ async function Live() {
                 name: r.customerName,
                 detail: r.returnTerminal ?? "",
                 status: r.pickupStatus,
+                rating: r.rating,
               }))}
             />
           )}

@@ -1,7 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { and, asc, desc, eq, gte, inArray, lt, sql } from "drizzle-orm";
 import { db } from "@/db";
-import { bookings, parkings, type Booking, type Parking } from "@/db/schema";
+import { bookings, parkings, reviews, type Booking, type Parking } from "@/db/schema";
 import { canTransition, type PickupStatus } from "@/lib/pickup";
 import { quote } from "@/lib/pricing";
 import {
@@ -302,7 +302,12 @@ export async function cancelPickupRequest(accessToken: string): Promise<boolean>
   return updated.length > 0;
 }
 
-export type ShuttleRow = Booking & { parkingName: string; airport: string };
+export type ShuttleRow = Booking & {
+  parkingName: string;
+  airport: string;
+  /** The customer's review (1–5), when they left one. */
+  rating?: number | null;
+};
 
 /** Confirmed returns whose planned landing falls in [start, end). */
 export async function listReturns(start: Date, end: Date): Promise<ShuttleRow[]> {
@@ -358,9 +363,15 @@ export async function countReturnsByDay(start: Date, end: Date): Promise<DayLoad
 /** Customers picked up within [start, end), most recent first. */
 export async function listPickedUp(start: Date, end: Date): Promise<ShuttleRow[]> {
   const rows = await db
-    .select({ booking: bookings, parkingName: parkings.name, airport: parkings.airport })
+    .select({
+      booking: bookings,
+      parkingName: parkings.name,
+      airport: parkings.airport,
+      rating: reviews.rating,
+    })
     .from(bookings)
     .innerJoin(parkings, eq(bookings.parkingId, parkings.id))
+    .leftJoin(reviews, eq(reviews.bookingId, bookings.id))
     .where(
       and(
         eq(bookings.pickupStatus, "picked_up"),
@@ -369,7 +380,12 @@ export async function listPickedUp(start: Date, end: Date): Promise<ShuttleRow[]
       ),
     )
     .orderBy(desc(bookings.pickedUpAt));
-  return rows.map((r) => ({ ...r.booking, parkingName: r.parkingName, airport: r.airport }));
+  return rows.map((r) => ({
+    ...r.booking,
+    parkingName: r.parkingName,
+    airport: r.airport,
+    rating: r.rating,
+  }));
 }
 
 /** Customers waiting right now, whatever their planned day (flights run late). */

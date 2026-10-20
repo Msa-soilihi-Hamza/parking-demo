@@ -72,6 +72,19 @@ export async function sendPickupRequestReceived(booking: Booking, terminal: stri
   );
 }
 
+/** Sent once the driver has picked the customer up: the link opens the review form. */
+export async function sendReviewRequest(booking: Booking) {
+  const link = `${appUrl()}/reservation/${booking.accessToken}#avis`;
+  await send(
+    booking.email,
+    "Comment s'est passé votre retour ?",
+    `Bon retour ! Donnez-nous votre avis en 10 secondes : ${link}`,
+    layout(`<p><strong>Bon retour !</strong></p>
+  <p>Comment s'est passé votre retour avec la navette ? Une note et, si vous le souhaitez, un mot : ça prend 10 secondes.</p>
+  <p><a href="${link}" style="display:inline-block;background:#b91c1c;color:#fff;padding:12px 20px;border-radius:8px;text-decoration:none">Donner mon avis</a></p>`),
+  );
+}
+
 export async function sendBookingConfirmation(booking: Booking, parking: Parking) {
   const link = `${appUrl()}/reservation/${booking.accessToken}`;
   await send(
