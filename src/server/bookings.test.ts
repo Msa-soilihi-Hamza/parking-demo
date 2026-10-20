@@ -4,6 +4,8 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { db } from "@/db";
 import { bookings, parkings } from "@/db/schema";
 import {
+  advancePickup,
+  cancelPickupRequest,
   confirmPayment,
   createUnverifiedBooking,
   verifyEmailAndHold,
@@ -27,7 +29,7 @@ const stay = (dropoff: string, ret: string, name: string): NewBookingInput => ({
   returnAt: new Date(ret),
   returnTerminal: null,
   customerName: name,
-  email: "test@exemple.fr",
+  email: "test@example.com",
   phone: "0600000000",
   plate: "TE-123-ST",
   passengers: 1,
@@ -115,5 +117,31 @@ describe("payment", () => {
     expect((await verifyEmailAndHold(id, CODE)).ok).toBe(true);
     expect(await confirmPayment(id)).toBe(true);
     expect(await confirmPayment(id)).toBe(false);
+  });
+});
+
+describe("cancelling the bags button", () => {
+  async function confirmedBooking(from: string, to: string) {
+    const id = await requestWithKnownCode(stay(from, to, "Retour"));
+    await verifyEmailAndHold(id, CODE);
+    await confirmPayment(id);
+    const [row] = await db.select().from(bookings).where(eq(bookings.id, id));
+    return row;
+  }
+
+  it("can be undone while no driver has left", async () => {
+    const booking = await confirmedBooking("2027-07-01T08:00Z", "2027-07-02T08:00Z");
+    await advancePickup({ accessToken: booking.accessToken }, "scheduled", "bags_ready");
+    expect(await cancelPickupRequest(booking.accessToken)).toBe(true);
+    const [row] = await db.select().from(bookings).where(eq(bookings.id, booking.id));
+    expect(row.pickupStatus).toBe("scheduled");
+    expect(row.bagsReadyAt).toBeNull();
+  });
+
+  it("cannot be undone once the shuttle is on its way", async () => {
+    const booking = await confirmedBooking("2027-07-10T08:00Z", "2027-07-11T08:00Z");
+    await advancePickup({ accessToken: booking.accessToken }, "scheduled", "bags_ready");
+    await advancePickup({ id: booking.id }, "bags_ready", "en_route");
+    expect(await cancelPickupRequest(booking.accessToken)).toBe(false);
   });
 });

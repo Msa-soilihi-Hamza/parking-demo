@@ -8,7 +8,7 @@ import {
   verifyCodeAction,
   type CodeState,
   type DetailsState,
-} from "@/app/reserver/actions";
+} from "@/app/(site)/reserver/actions";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";

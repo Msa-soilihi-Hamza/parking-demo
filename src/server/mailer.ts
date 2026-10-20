@@ -19,7 +19,14 @@ export function mailerConfigured() {
   return transporter !== null;
 }
 
+// Reserved by RFC 2606: used by the demo data, never deliverable.
+const isDemoAddress = (to: string) => /@example\.(com|org|net)$/i.test(to);
+
 async function send(to: string, subject: string, text: string, html: string) {
+  if (isDemoAddress(to)) {
+    console.info(`[e-mail de démo non envoyé] À : ${to} · Objet : ${subject}`);
+    return;
+  }
   if (!transporter) {
     // Development only: without SMTP settings, print the e-mail in the server console.
     if (process.env.NODE_ENV !== "production") {
@@ -47,6 +54,21 @@ export async function sendVerificationCode(to: string, code: string) {
     layout(`<p>Votre code de vérification :</p>
   <p style="font-size:32px;font-weight:bold;letter-spacing:8px;margin:16px 0">${code}</p>
   <p style="color:#737373">Il expire dans 10 minutes. Si vous n'avez rien demandé, ignorez cet e-mail.</p>`),
+  );
+}
+
+/** Sent right after "J'ai mes bagages": the customer knows the shuttle team has the request. */
+export async function sendPickupRequestReceived(booking: Booking, terminal: string) {
+  const link = `${appUrl()}/reservation/${booking.accessToken}`;
+  await send(
+    booking.email,
+    `La navette a bien reçu votre demande · ${terminal}`,
+    `L'équipe navette a bien reçu votre demande. Rendez-vous au point navette du terminal ${terminal}.\n` +
+      `Suivez l'arrivée de la navette ici : ${link}\nUn imprévu ? Appelez le ${SUPPORT_PHONE}, 24h/24.`,
+    layout(`<p><strong>L'équipe navette a bien reçu votre demande.</strong></p>
+  <p>Rendez-vous au point navette du <strong>terminal ${terminal}</strong> : un chauffeur part vous chercher.</p>
+  <p><a href="${link}" style="display:inline-block;background:#b91c1c;color:#fff;padding:12px 20px;border-radius:8px;text-decoration:none">Suivre la navette</a></p>
+  <p style="color:#737373">Appuyé par erreur ? Vous pouvez annuler depuis ce lien tant que la navette n'est pas partie. Un imprévu ? ${SUPPORT_PHONE}, 24h/24.</p>`),
   );
 }
 

@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { and, asc, eq, gte, inArray, lt, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, lt, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { bookings, parkings, type Booking, type Parking } from "@/db/schema";
 import { canTransition, type PickupStatus } from "@/lib/pickup";
@@ -283,6 +283,25 @@ export async function advancePickup(
   return updated.length > 0;
 }
 
+/**
+ * Undoes a mistaken "J'ai mes bagages". Only while no driver has left:
+ * the status guard makes it a no-op once the shuttle is on its way.
+ */
+export async function cancelPickupRequest(accessToken: string): Promise<boolean> {
+  const updated = await db
+    .update(bookings)
+    .set({ pickupStatus: "scheduled", bagsReadyAt: null })
+    .where(
+      and(
+        eq(bookings.accessToken, accessToken),
+        eq(bookings.status, "confirmed"),
+        eq(bookings.pickupStatus, "bags_ready"),
+      ),
+    )
+    .returning({ id: bookings.id });
+  return updated.length > 0;
+}
+
 export type ShuttleRow = Booking & { parkingName: string; airport: string };
 
 /** Confirmed returns whose planned landing falls in [start, end). */
@@ -299,6 +318,57 @@ export async function listReturns(start: Date, end: Date): Promise<ShuttleRow[]>
       ),
     )
     .orderBy(asc(bookings.returnAt));
+  return rows.map((r) => ({ ...r.booking, parkingName: r.parkingName, airport: r.airport }));
+}
+
+/** Customers still to pick up whose landing is in [start, end), soonest first. */
+export async function listUpcomingReturns(start: Date, end: Date): Promise<ShuttleRow[]> {
+  const rows = await db
+    .select({ booking: bookings, parkingName: parkings.name, airport: parkings.airport })
+    .from(bookings)
+    .innerJoin(parkings, eq(bookings.parkingId, parkings.id))
+    .where(
+      and(
+        eq(bookings.status, "confirmed"),
+        eq(bookings.pickupStatus, "scheduled"),
+        gte(bookings.returnAt, start),
+        lt(bookings.returnAt, end),
+      ),
+    )
+    .orderBy(asc(bookings.returnAt));
+  return rows.map((r) => ({ ...r.booking, parkingName: r.parkingName, airport: r.airport }));
+}
+
+export type DayLoad = { day: string; clients: number; passengers: number };
+
+/** Confirmed returns per Paris calendar day ("2026-10-20"), to show busy days. */
+export async function countReturnsByDay(start: Date, end: Date): Promise<DayLoad[]> {
+  const result = await db.execute<DayLoad>(sql`
+    SELECT to_char(return_at AT TIME ZONE 'Europe/Paris', 'YYYY-MM-DD') AS day,
+           count(*)::int AS clients,
+           sum(passengers)::int AS passengers
+    FROM bookings
+    WHERE status = 'confirmed' AND return_at >= ${start} AND return_at < ${end}
+    GROUP BY 1
+    ORDER BY 1
+  `);
+  return result.rows;
+}
+
+/** Customers picked up within [start, end), most recent first. */
+export async function listPickedUp(start: Date, end: Date): Promise<ShuttleRow[]> {
+  const rows = await db
+    .select({ booking: bookings, parkingName: parkings.name, airport: parkings.airport })
+    .from(bookings)
+    .innerJoin(parkings, eq(bookings.parkingId, parkings.id))
+    .where(
+      and(
+        eq(bookings.pickupStatus, "picked_up"),
+        gte(bookings.pickedUpAt, start),
+        lt(bookings.pickedUpAt, end),
+      ),
+    )
+    .orderBy(desc(bookings.pickedUpAt));
   return rows.map((r) => ({ ...r.booking, parkingName: r.parkingName, airport: r.airport }));
 }
 

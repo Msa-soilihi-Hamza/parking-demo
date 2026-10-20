@@ -6,8 +6,8 @@ import { fr } from "react-day-picker/locale";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
-import { InputGroup, InputGroupAddon, InputGroupInput } from "@/components/ui/input-group";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 export type StayDates = {
   /** Calendar days as "2026-10-20" (Paris time) */
@@ -27,8 +27,51 @@ const fromDay = (s: string) => {
 const shortDay = (s: string) =>
   new Intl.DateTimeFormat("fr-FR", { weekday: "short", day: "numeric", month: "short" }).format(fromDay(s));
 
-const timeInputClass =
-  "appearance-none [&::-webkit-calendar-picker-indicator]:hidden [&::-webkit-calendar-picker-indicator]:appearance-none";
+// Hours on the left, minutes on the right: every value, picked from lists, never typed.
+const HOURS = Array.from({ length: 24 }, (_, i) => pad(i));
+const MINUTES = Array.from({ length: 60 }, (_, i) => pad(i));
+
+function NumberSelect({
+  id,
+  label,
+  value,
+  options,
+  onChange,
+}: {
+  id?: string;
+  label: string;
+  value: string;
+  options: string[];
+  onChange: (value: string) => void;
+}) {
+  return (
+    <Select value={value} onValueChange={(next) => next && onChange(String(next))}>
+      <SelectTrigger id={id} aria-label={label} className="w-full font-mono tabular-nums">
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent className="max-h-72 min-w-20">
+        {options.map((option) => (
+          <SelectItem key={option} value={option} className="font-mono tabular-nums">
+            {option}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  );
+}
+
+/** A time as two lists: hour (00–23) then minutes (00–59). Value is "08:05". */
+function TimeSelect({ id, label, value, onChange }: { id: string; label: string; value: string; onChange: (value: string) => void }) {
+  const [hour, minute] = value.split(":");
+  return (
+    <div className="flex items-center gap-1.5">
+      <Clock2Icon className="size-4 shrink-0 text-muted-foreground" aria-hidden />
+      <NumberSelect id={id} label={`${label} : heure`} value={hour} options={HOURS} onChange={(h) => onChange(`${h}:${minute}`)} />
+      <span className="text-muted-foreground">:</span>
+      <NumberSelect label={`${label} : minutes`} value={minute} options={MINUTES} onChange={(m) => onChange(`${hour}:${m}`)} />
+    </div>
+  );
+}
 
 type Props = {
   value: StayDates;
@@ -46,10 +89,10 @@ export function StayDatesPicker({ value, onChange, minDay, layout = "inline" }: 
   return (
     <div
       className={
-        layout === "inline" ? "grid gap-4 sm:grid-cols-[1fr_auto_auto]" : "grid grid-cols-2 gap-3"
+        layout === "inline" ? "grid gap-4 sm:grid-cols-[1fr_auto_auto]" : "grid gap-3 sm:grid-cols-2"
       }
     >
-      <Field className={layout === "stacked" ? "col-span-2" : undefined}>
+      <Field className={layout === "stacked" ? "sm:col-span-2" : undefined}>
         <FieldLabel>Dates du séjour</FieldLabel>
         <Popover>
           <PopoverTrigger
@@ -81,37 +124,21 @@ export function StayDatesPicker({ value, onChange, minDay, layout = "inline" }: 
       <FieldGroup className="contents">
         <Field>
           <FieldLabel htmlFor="dropoffTime">Heure de dépôt</FieldLabel>
-          <InputGroup>
-            <InputGroupInput
-              id="dropoffTime"
-              type="time"
-              step={300}
-              required
-              value={value.dropoffTime}
-              onChange={(e) => onChange({ ...value, dropoffTime: e.target.value })}
-              className={timeInputClass}
-            />
-            <InputGroupAddon>
-              <Clock2Icon className="text-muted-foreground" />
-            </InputGroupAddon>
-          </InputGroup>
+          <TimeSelect
+            id="dropoffTime"
+            label="Heure de dépôt"
+            value={value.dropoffTime}
+            onChange={(dropoffTime) => onChange({ ...value, dropoffTime })}
+          />
         </Field>
         <Field>
           <FieldLabel htmlFor="returnTime">Atterrissage retour</FieldLabel>
-          <InputGroup>
-            <InputGroupInput
-              id="returnTime"
-              type="time"
-              step={300}
-              required
-              value={value.returnTime}
-              onChange={(e) => onChange({ ...value, returnTime: e.target.value })}
-              className={timeInputClass}
-            />
-            <InputGroupAddon>
-              <Clock2Icon className="text-muted-foreground" />
-            </InputGroupAddon>
-          </InputGroup>
+          <TimeSelect
+            id="returnTime"
+            label="Atterrissage retour"
+            value={value.returnTime}
+            onChange={(returnTime) => onChange({ ...value, returnTime })}
+          />
         </Field>
       </FieldGroup>
 

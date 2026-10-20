@@ -3,7 +3,7 @@
 import { Loader2Icon } from "lucide-react";
 import { useState } from "react";
 import { useFormStatus } from "react-dom";
-import { markBagsReadyAction } from "@/app/reservation/actions";
+import { markBagsReadyAction } from "@/app/(site)/reservation/actions";
 import { SelectField } from "@/components/select-field";
 import { Button } from "@/components/ui/button";
 import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";

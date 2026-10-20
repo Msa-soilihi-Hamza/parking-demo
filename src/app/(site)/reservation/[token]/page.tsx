@@ -1,15 +1,16 @@
+import { CircleCheckIcon } from "lucide-react";
 import { notFound } from "next/navigation";
 import { connection } from "next/server";
 import { Suspense } from "react";
 import { AutoRefresh } from "@/components/auto-refresh";
 import { BagsForm } from "@/components/bags-form";
+import { CancelRequestButton } from "@/components/cancel-request-button";
 import { PickupTimeline } from "@/components/pickup-timeline";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { SUPPORT_PHONE, SUPPORT_PHONE_HREF } from "@/lib/contact";
-import { BAGS_BUTTON_OPENS_BEFORE_MS, bagsButtonOpen } from "@/lib/pickup";
 import { formatEuros } from "@/lib/pricing";
 import { formatDateTime, formatTime } from "@/lib/time";
 import { confirmPayment, getBookingByToken } from "@/server/bookings";
@@ -51,7 +52,6 @@ async function Reservation({
   }
 
   const { booking, parking } = found;
-  const now = new Date();
   const waiting = booking.pickupStatus === "bags_ready" || booking.pickupStatus === "en_route";
 
   return (
@@ -112,31 +112,46 @@ async function Reservation({
               }}
             />
 
-            {booking.pickupStatus === "scheduled" &&
-              (bagsButtonOpen(booking.returnAt, now) ? (
+            {/* The button works at any time: a customer back early must not have to call. */}
+            {booking.pickupStatus === "scheduled" && (
+              <div className="space-y-3">
+                <p className="text-sm text-muted-foreground">
+                  Retour prévu le {formatDateTime(booking.returnAt)}. Rentré plus tôt ? Le bouton marche aussi.
+                </p>
                 <BagsForm
                   token={token}
                   terminals={parking.terminals}
                   defaultTerminal={booking.returnTerminal}
                   passengers={booking.passengers}
                 />
-              ) : (
-                <p className="rounded-lg bg-muted px-4 py-3 text-sm text-muted-foreground">
-                  Le bouton « J&apos;ai mes bagages » apparaîtra ici à partir du{" "}
-                  {formatDateTime(new Date(booking.returnAt.getTime() - BAGS_BUTTON_OPENS_BEFORE_MS))}.
-                </p>
-              ))}
+              </div>
+            )}
 
             {booking.pickupStatus === "bags_ready" && (
-              <p className="rounded-lg bg-muted px-4 py-3 text-sm">
-                Demande reçue à {formatTime(booking.bagsReadyAt!)}. Un chauffeur part vous chercher au terminal{" "}
-                <strong>{booking.returnTerminal}</strong>. Cette page se met à jour toute seule.
-              </p>
+              <div className="space-y-3">
+                <Alert className="border-emerald-200 bg-emerald-50 text-emerald-900">
+                  <CircleCheckIcon className="text-emerald-600" />
+                  <AlertTitle>L&apos;équipe navette a bien reçu votre demande</AlertTitle>
+                  <AlertDescription className="text-emerald-800">
+                    Reçue à {formatTime(booking.bagsReadyAt!)}. Rendez-vous au point navette du terminal{" "}
+                    <strong>{booking.returnTerminal}</strong>. Une confirmation vient de vous être envoyée par
+                    e-mail, et cette page se met à jour toute seule.
+                  </AlertDescription>
+                </Alert>
+                <CancelRequestButton token={token} />
+                <p className="text-center text-xs text-muted-foreground">
+                  Appuyé par erreur ? Annulez tant que la navette n&apos;est pas partie.
+                </p>
+              </div>
             )}
             {booking.pickupStatus === "en_route" && (
-              <p className="rounded-lg bg-primary/5 px-4 py-3 text-sm">
+              <p className="rounded-lg bg-amber-50 px-4 py-3 text-sm text-amber-900">
                 <strong>La navette est en route.</strong> Rendez-vous au point navette du terminal{" "}
-                {booking.returnTerminal}.
+                {booking.returnTerminal}. Un changement de dernière minute ? Appelez le{" "}
+                <a href={SUPPORT_PHONE_HREF} className="font-medium underline">
+                  {SUPPORT_PHONE}
+                </a>
+                .
               </p>
             )}
             {booking.pickupStatus === "picked_up" && (

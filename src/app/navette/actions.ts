@@ -32,3 +32,8 @@ export async function advancePickupAction(formData: FormData) {
   await advancePickup({ id }, from, to);
   refresh();
 }
+
+export async function shuttleLogoutAction() {
+  (await cookies()).delete(SHUTTLE_COOKIE);
+  redirect("/");
+}

@@ -1,6 +1,10 @@
 // Return trip state machine: the shuttle only leaves once the customer has their bags.
 //
 //   scheduled ──(client: "J'ai mes bagages")──▶ bags_ready ──(driver)──▶ en_route ──(driver)──▶ picked_up
+//       ▲                                           │
+//       └────────(client: "Annuler ma demande")─────┘   only until the driver leaves
+//
+// The button works at any time: a customer back earlier than planned must not have to call.
 
 export const PICKUP_STATUSES = ["scheduled", "bags_ready", "en_route", "picked_up"] as const;
 export type PickupStatus = (typeof PICKUP_STATUSES)[number];
@@ -20,11 +24,9 @@ export function canTransition(from: PickupStatus, to: PickupStatus): boolean {
   return TRANSITIONS[from] === to;
 }
 
-/** The bags button opens a few hours before the planned landing (flights can be early). */
-export const BAGS_BUTTON_OPENS_BEFORE_MS = 6 * 60 * 60 * 1000;
-
-export function bagsButtonOpen(returnAt: Date, now: Date): boolean {
-  return now.getTime() >= returnAt.getTime() - BAGS_BUTTON_OPENS_BEFORE_MS;
+/** A mistaken press can be undone until a driver has left to pick the customer up. */
+export function canCancelRequest(status: PickupStatus): boolean {
+  return status === "bags_ready";
 }
 
 export const PICKUP_LABELS: Record<PickupStatus, string> = {

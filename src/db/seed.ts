@@ -1,5 +1,7 @@
 // Demo data, relative to "now": re-run `npm run db:seed` before showing the demo.
-import { sql } from "drizzle-orm";
+// Only the demo bookings (reference ESC-DEMO…) are replaced: real bookings made
+// through the site, with their e-mailed links, are never touched.
+import { like, sql } from "drizzle-orm";
 import { quote } from "../lib/pricing";
 import type { PickupStatus } from "../lib/pickup";
 import { parisDayBounds } from "../lib/time";
@@ -41,11 +43,10 @@ function reference() {
 async function main() {
   const now = Date.now();
 
-  await db.execute(sql`TRUNCATE bookings, parkings RESTART IDENTITY CASCADE`);
+  await db.delete(bookings).where(like(bookings.reference, "ESC-DEMO%"));
 
-  const [orly, cdg] = await db
-    .insert(parkings)
-    .values([
+  // Parkings are updated in place so real bookings keep pointing at them.
+  const parkingValues = [
       {
         slug: "orly",
         name: "Escale Orly",
@@ -64,8 +65,27 @@ async function main() {
         dailyRateCents: 1600,
         terminals: ["T1", "T2A", "T2B", "T2C", "T2D", "T2E", "T2F", "T2G", "T3"],
       },
-    ])
-    .returning();
+  ];
+  const [orly, cdg] = await Promise.all(
+    parkingValues.map(async (value) => {
+      const [row] = await db
+        .insert(parkings)
+        .values(value)
+        .onConflictDoUpdate({
+          target: parkings.slug,
+          set: {
+            name: value.name,
+            airport: value.airport,
+            address: value.address,
+            capacity: value.capacity,
+            dailyRateCents: value.dailyRateCents,
+            terminals: value.terminals,
+          },
+        })
+        .returning();
+      return row;
+    }),
+  );
 
   type Row = typeof bookings.$inferInsert;
   const rows: Row[] = [];
@@ -78,7 +98,11 @@ async function main() {
     const price = quote(parking.dailyRateCents, dropoffAt, ret);
     const first = pick(FIRST_NAMES);
     const last = pick(LAST_NAMES);
-    const bagsReadyAt = pickup !== "scheduled" ? new Date(returnAt + (20 + rand() * 25) * MIN) : null;
+    // Bags come out 20–45 min after landing, but never in the future.
+    const bagsReadyAt =
+      pickup !== "scheduled"
+        ? new Date(Math.min(returnAt + (20 + rand() * 25) * MIN, now - (6 + rand() * 10) * MIN))
+        : null;
     const enRouteAt =
       pickup === "en_route" || pickup === "picked_up"
         ? new Date(bagsReadyAt!.getTime() + (1 + rand() * 4) * MIN)
@@ -91,7 +115,7 @@ async function main() {
       accessToken: `seed-${counter}-${Math.floor(rand() * 1e9).toString(36)}`,
       parkingId: parking.id,
       customerName: `${first} ${last}`,
-      email: `${first}.${last}@exemple.fr`.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, ""),
+      email: `${first}.${last}@example.com`.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, ""),
       phone: `06 ${String(Math.floor(rand() * 1e8)).padStart(8, "0").replace(/(\d{2})(?=\d)/g, "$1 ")}`,
       plate: plate(),
       passengers: 1 + Math.floor(rand() * 4),
@@ -110,6 +134,15 @@ async function main() {
     });
   }
 
+  // The past 6 days, all picked up: the shuttle team's history.
+  for (let offset = -6; offset <= -1; offset++) {
+    const { start } = parisDayBounds(new Date(now), offset);
+    const count = 14 + Math.floor(rand() * 10);
+    for (let i = 0; i < count; i++) {
+      makeBooking(roundTo5(start.getTime() + 6 * HOUR + rand() * 17.5 * HOUR), "picked_up");
+    }
+  }
+
   // Returns spread over today and tomorrow (Paris time), 06:00 → 23:30.
   for (const offset of [0, 1]) {
     const { start } = parisDayBounds(new Date(now), offset);
@@ -120,6 +153,17 @@ async function main() {
       const status: PickupStatus = returnAt + HOUR < now ? "picked_up" : "scheduled";
       if (returnAt < now && returnAt + HOUR >= now) continue; // the live ones are added below
       makeBooking(returnAt, status);
+    }
+  }
+
+  // The next 30 days, busier on weekends and around the 1 November holiday.
+  for (let offset = 2; offset <= 30; offset++) {
+    const { start } = parisDayBounds(new Date(now), offset);
+    const weekday = new Date(start.getTime() + 12 * HOUR).getUTCDay();
+    const busy = weekday === 0 || weekday === 6 || rand() < 0.15;
+    const count = busy ? 15 + Math.floor(rand() * 10) : 3 + Math.floor(rand() * 9);
+    for (let i = 0; i < count; i++) {
+      makeBooking(roundTo5(start.getTime() + 6 * HOUR + rand() * 17.5 * HOUR), "scheduled");
     }
   }
 
@@ -134,14 +178,19 @@ async function main() {
     reference: "ESC-DEMO00",
     parkingId: orly.id,
     customerName: "Visiteur Démo",
-    email: "demo@exemple.fr",
+    email: "demo@example.com",
     phone: "06 00 00 00 00",
     passengers: 2,
     returnTerminal: null,
   });
 
   await db.insert(bookings).values(rows);
-  console.log(`Seeded 2 parkings and ${rows.length} bookings.`);
+  const [{ kept }] = (
+    await db.execute<{ kept: number }>(
+      sql`SELECT count(*)::int AS kept FROM bookings WHERE reference NOT LIKE 'ESC-DEMO%'`,
+    )
+  ).rows;
+  console.log(`Seeded ${rows.length} demo bookings (${kept} real bookings kept).`);
 }
 
 main()

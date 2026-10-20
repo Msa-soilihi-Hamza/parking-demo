@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { bagsButtonOpen, canTransition, nextStatus } from "./pickup";
+import { canCancelRequest, canTransition, nextStatus } from "./pickup";
 
 describe("return trip state machine", () => {
   it("follows scheduled → bags_ready → en_route → picked_up", () => {
@@ -14,20 +14,20 @@ describe("return trip state machine", () => {
     expect(canTransition("scheduled", "picked_up")).toBe(false);
   });
 
-  it("never goes backwards", () => {
+  it("never goes backwards on its own", () => {
     expect(canTransition("en_route", "bags_ready")).toBe(false);
     expect(canTransition("picked_up", "scheduled")).toBe(false);
   });
 });
 
-describe("bagsButtonOpen", () => {
-  const landing = new Date("2026-11-03T14:00:00Z");
-
-  it("is closed days before the return", () => {
-    expect(bagsButtonOpen(landing, new Date("2026-11-01T14:00:00Z"))).toBe(false);
+describe("canCancelRequest", () => {
+  it("lets the customer undo the bags button until a driver leaves", () => {
+    expect(canCancelRequest("bags_ready")).toBe(true);
   });
 
-  it("opens a few hours before the planned landing", () => {
-    expect(bagsButtonOpen(landing, new Date("2026-11-03T09:00:00Z"))).toBe(true);
+  it("refuses once the shuttle is on its way or done", () => {
+    expect(canCancelRequest("scheduled")).toBe(false);
+    expect(canCancelRequest("en_route")).toBe(false);
+    expect(canCancelRequest("picked_up")).toBe(false);
   });
 });
