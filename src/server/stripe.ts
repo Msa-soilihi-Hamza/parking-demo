@@ -1,11 +1,18 @@
 import Stripe from "stripe";
 import type { Booking, Parking } from "@/db/schema";
+import { resolveAppUrl } from "@/lib/app-url";
 
 let client: Stripe | null = null;
 
+/** Keys are pasted by hand in the hosting dashboard: drop stray spaces and quotes. */
+export function cleanSecret(value: string | undefined): string | undefined {
+  const cleaned = value?.trim().replace(/^["']+|["']+$/g, "").trim();
+  return cleaned || undefined;
+}
+
 /** Real Stripe, test mode only: test cards work, no money ever moves. */
 export function getStripe(): Stripe {
-  const secretKey = process.env.STRIPE_SECRET_KEY;
+  const secretKey = cleanSecret(process.env.STRIPE_SECRET_KEY);
   if (!secretKey) {
     throw new Error("Stripe n'est pas configuré : ajoutez STRIPE_SECRET_KEY dans .env.local.");
   }
@@ -17,7 +24,10 @@ export function getStripe(): Stripe {
 }
 
 export function appUrl() {
-  return process.env.APP_URL ?? "http://localhost:3000";
+  return resolveAppUrl({
+    APP_URL: process.env.APP_URL,
+    VERCEL_PROJECT_PRODUCTION_URL: process.env.VERCEL_PROJECT_PRODUCTION_URL,
+  });
 }
 
 export async function createCheckoutSession(booking: Booking, parking: Parking) {

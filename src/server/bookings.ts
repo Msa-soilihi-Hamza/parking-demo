@@ -238,6 +238,22 @@ export async function confirmPayment(bookingId: string): Promise<boolean> {
   return true;
 }
 
+/** A verified booking whose spot is still held: payment can (re)start for it. */
+export async function getHeldBooking(bookingId: string) {
+  const [row] = await db
+    .select({ booking: bookings, parking: parkings })
+    .from(bookings)
+    .innerJoin(parkings, eq(bookings.parkingId, parkings.id))
+    .where(
+      and(
+        eq(bookings.id, bookingId),
+        eq(bookings.status, "pending_payment"),
+        gte(bookings.heldAt, new Date(Date.now() - PAYMENT_HOLD_MINUTES * 60 * 1000)),
+      ),
+    );
+  return row ?? null;
+}
+
 /** Checkout expired or abandoned: free the held spot. */
 export async function releaseHold(bookingId: string) {
   await db

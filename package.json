@@ -14,7 +14,8 @@
     "test": "vitest run",
     "db:migrate:neon": "drizzle-kit migrate --config drizzle.neon.config.ts",
     "db:seed:neon": "tsx --env-file=.env.neon src/db/seed.ts",
-    "smoke:neon": "tsx --env-file=.env.neon scripts/smoke-test.ts"
+    "smoke:neon": "tsx --env-file=.env.neon scripts/smoke-test.ts",
+    "webhook:check": "tsx scripts/webhook-check.ts"
   },
   "dependencies": {
     "@base-ui/react": "^1.9.0",

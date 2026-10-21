@@ -4,6 +4,7 @@ import { ArrowLeftIcon, Loader2Icon, MailCheckIcon } from "lucide-react";
 import { useActionState, useMemo, useState, useTransition } from "react";
 import {
   resendCodeAction,
+  retryPaymentAction,
   submitDetailsAction,
   verifyCodeAction,
   type CodeState,
@@ -257,6 +258,9 @@ function CodeStep({ bookingId, email, onBack }: { bookingId: string; email: stri
         </CardDescription>
       </CardHeader>
       <CardContent>
+        {state.retryBookingId ? (
+          <RetryPayment bookingId={state.retryBookingId} firstError={state.error} />
+        ) : (
         <form action={verify} className="space-y-5">
           <input type="hidden" name="bookingId" value={bookingId} />
           <InputOTP
@@ -281,6 +285,7 @@ function CodeStep({ bookingId, email, onBack }: { bookingId: string; email: stri
             Vérifier et payer
           </Button>
         </form>
+        )}
         <div className="mt-6 flex flex-wrap items-center gap-x-4 gap-y-2 text-sm">
           <Button variant="ghost" size="sm" onClick={onBack}>
             <ArrowLeftIcon /> Modifier mes informations
@@ -299,5 +304,22 @@ function CodeStep({ bookingId, email, onBack }: { bookingId: string; email: stri
         </div>
       </CardContent>
     </Card>
+  );
+}
+
+/** Shown when Stripe could not start: the e-mail is verified and the spot held, so only payment is retried. */
+function RetryPayment({ bookingId, firstError }: { bookingId: string; firstError?: string }) {
+  const [state, retry, retrying] = useActionState<CodeState, FormData>(retryPaymentAction, {});
+  return (
+    <form action={retry} className="space-y-4">
+      <input type="hidden" name="bookingId" value={bookingId} />
+      <p className="text-sm text-destructive">{state.error ?? firstError}</p>
+      {(state.retryBookingId ?? !state.error) && (
+        <Button type="submit" size="lg" disabled={retrying}>
+          {retrying && <Loader2Icon className="animate-spin" />}
+          Réessayer le paiement
+        </Button>
+      )}
+    </form>
   );
 }

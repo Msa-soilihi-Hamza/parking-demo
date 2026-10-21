@@ -1,11 +1,11 @@
 import type Stripe from "stripe";
 import { confirmPayment, releaseHold } from "@/server/bookings";
-import { getStripe } from "@/server/stripe";
+import { cleanSecret, getStripe } from "@/server/stripe";
 
 // Stripe calls this after checkout. Signature checked, handlers idempotent:
 // a duplicated event (Stripe retries) changes nothing the second time.
 export async function POST(request: Request) {
-  const secret = process.env.STRIPE_WEBHOOK_SECRET;
+  const secret = cleanSecret(process.env.STRIPE_WEBHOOK_SECRET);
   if (!secret) return Response.json({ error: "Webhook non configuré" }, { status: 503 });
 
   const signature = request.headers.get("stripe-signature");

@@ -6,6 +6,7 @@ import { parisLocalToDate } from "@/lib/time";
 import {
   attachStripeSession,
   createUnverifiedBooking,
+  getHeldBooking,
   resendCode,
   verifyEmailAndHold,
 } from "@/server/bookings";
@@ -85,7 +86,12 @@ export async function submitDetailsAction(
   }
 }
 
-export type CodeState = { error?: string; info?: string };
+export type CodeState = {
+  error?: string;
+  info?: string;
+  /** Set when Stripe failed after the spot was held: the payment can be retried. */
+  retryBookingId?: string;
+};
 
 export async function verifyCodeAction(_prev: CodeState, formData: FormData): Promise<CodeState> {
   const bookingId = String(formData.get("bookingId") ?? "");
@@ -103,16 +109,36 @@ export async function verifyCodeAction(_prev: CodeState, formData: FormData): Pr
   const result = await verifyEmailAndHold(bookingId, code);
   if (!result.ok) return { error: result.error };
 
+  return startCheckout(result.booking.id);
+}
+
+/**
+ * Opens Stripe Checkout for a verified booking whose spot is held. If Stripe fails,
+ * the spot stays held and the customer gets a retry button instead of a dead end.
+ */
+async function startCheckout(bookingId: string): Promise<CodeState> {
+  const held = await getHeldBooking(bookingId);
+  if (!held) {
+    return { error: "Le délai de paiement est dépassé : la place a été libérée. Recommencez la réservation." };
+  }
+
   let checkoutUrl: string;
   try {
-    const session = await createCheckoutSession(result.booking, result.parking);
-    await attachStripeSession(result.booking.id, session.id);
+    const session = await createCheckoutSession(held.booking, held.parking);
+    await attachStripeSession(held.booking.id, session.id);
     checkoutUrl = session.url!;
   } catch (error) {
-    console.error(error);
-    return { error: "Le paiement est indisponible pour le moment. Réessayez dans un instant." };
+    console.error("Stripe Checkout failed:", error instanceof Error ? error.message : error);
+    return {
+      error: "Le paiement n'a pas pu démarrer. Votre place reste réservée 30 minutes, réessayez.",
+      retryBookingId: held.booking.id,
+    };
   }
   redirect(checkoutUrl);
+}
+
+export async function retryPaymentAction(_prev: CodeState, formData: FormData): Promise<CodeState> {
+  return startCheckout(String(formData.get("bookingId") ?? ""));
 }
 
 export async function resendCodeAction(bookingId: string): Promise<CodeState> {
