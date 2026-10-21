@@ -4,6 +4,7 @@ import { refresh } from "next/cache";
 import { after } from "next/server";
 import { advancePickup, cancelPickupRequest, getBookingByToken } from "@/server/bookings";
 import { sendPickupRequestReceived } from "@/server/mailer";
+import { bagsReadyNotification, notifyShuttleTeam, pickupCancelledNotification } from "@/server/push";
 import { submitReview } from "@/server/reviews";
 
 export async function markBagsReadyAction(formData: FormData) {
@@ -21,13 +22,23 @@ export async function markBagsReadyAction(formData: FormData) {
     returnTerminal: terminal,
   });
 
-  // The confirmation e-mail goes out after the response, so the page updates at once.
+  // The push to the drivers and the customer's e-mail go out after the response,
+  // so the page updates at once; one failing does not stop the other.
   if (sent) {
     after(async () => {
-      try {
-        await sendPickupRequestReceived(booking, terminal);
-      } catch (error) {
-        console.error("Pickup confirmation e-mail failed", error);
+      const results = await Promise.allSettled([
+        notifyShuttleTeam(
+          bagsReadyNotification({
+            bookingId: booking.id,
+            customerName: booking.customerName,
+            terminal,
+            passengers: booking.passengers,
+          }),
+        ),
+        sendPickupRequestReceived(booking, terminal),
+      ]);
+      for (const result of results) {
+        if (result.status === "rejected") console.error("Bags-ready follow-up failed", result.reason);
       }
     });
   }
@@ -50,6 +61,25 @@ export async function submitReviewAction(_prev: ReviewFormState, formData: FormD
 
 export async function cancelPickupRequestAction(formData: FormData) {
   const token = String(formData.get("token") ?? "");
-  await cancelPickupRequest(token);
+  const found = await getBookingByToken(token);
+  const cancelled = await cancelPickupRequest(token);
+
+  // Tell the drivers right away, so nobody leaves for a customer who no longer waits.
+  if (cancelled && found) {
+    const { booking } = found;
+    after(async () => {
+      try {
+        await notifyShuttleTeam(
+          pickupCancelledNotification({
+            bookingId: booking.id,
+            customerName: booking.customerName,
+            terminal: booking.returnTerminal,
+          }),
+        );
+      } catch (error) {
+        console.error("Cancel push failed", error);
+      }
+    });
+  }
   refresh();
 }

@@ -10,7 +10,38 @@ import { bookings } from "@/db/schema";
 import { PICKUP_STATUSES, type PickupStatus } from "@/lib/pickup";
 import { advancePickup } from "@/server/bookings";
 import { sendReviewRequest } from "@/server/mailer";
+import {
+  deleteSubscription,
+  notifyShuttleTeam,
+  saveSubscription,
+  type SubscriptionInput,
+} from "@/server/push";
 import { hasShuttleAccess, SHUTTLE_COOKIE, shuttleAccessCode } from "@/server/shuttle-access";
+
+/** Registers this device for push notifications (shuttle team only). */
+export async function subscribePushAction(sub: SubscriptionInput) {
+  if (!(await hasShuttleAccess())) throw new Error("Accès refusé.");
+  if (!sub?.endpoint?.startsWith("https://") || !sub.keys?.p256dh || !sub.keys?.auth) {
+    throw new Error("Abonnement invalide.");
+  }
+  await saveSubscription(sub);
+}
+
+export async function unsubscribePushAction(endpoint: string) {
+  if (!(await hasShuttleAccess())) throw new Error("Accès refusé.");
+  await deleteSubscription(endpoint);
+}
+
+/** Lets a driver check that notifications reach this device. */
+export async function sendTestPushAction() {
+  if (!(await hasShuttleAccess())) throw new Error("Accès refusé.");
+  return notifyShuttleTeam({
+    title: "Notifications activées",
+    body: "Vous serez prévenu dès qu'un client a récupéré ses bagages.",
+    url: "/navette",
+    tag: "test",
+  });
+}
 
 export async function shuttleLoginAction(_prev: string | null, formData: FormData) {
   if (String(formData.get("code") ?? "").trim() !== shuttleAccessCode()) {

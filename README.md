@@ -1,4 +1,4 @@
-# Escale Parking — démo de réservation de parking d'aéroport
+﻿# Escale Parking — démo de réservation de parking d'aéroport
 
 Projet de démonstration (marque et données fictives) : un parcours de réservation simple, et un
 **retour sans appel**. Au lieu de téléphoner une fois ses bagages récupérés, le client appuie sur
@@ -11,7 +11,7 @@ Projet de démonstration (marque et données fictives) : un parcours de réserva
 | `/` | Landing page : promesse, fonctionnement, tarifs |
 | `/reserver` | Parking et dates avec **prix immédiat**, coordonnées, **vérification de l'e-mail par code à 6 chiffres**, puis **paiement Stripe** (mode test) |
 | `/reservation/[token]` | Lien personnel du client (reçu par e-mail) : bouton « J'ai mes bagages » à tout moment (annulable tant que la navette n'est pas partie), suivi en direct, puis avis (étoiles + commentaire) |
-| `/navette` | Équipe navette : clients à récupérer maintenant, retours prévus par créneau (aujourd'hui / demain) |
+| `/navette` | Équipe navette : clients à récupérer maintenant, planning par jour, historique ; **notifications push** quand un client a ses bagages |
 
 Pour tester sans réserver : `/reservation/demo-retour` (avion qui vient d'atterrir) et `/navette`
 (code `navette`).
@@ -44,6 +44,10 @@ Pour tester sans réserver : `/reservation/demo-retour` (avion qui vient d'atter
 - **Avis clients** : un seul par réservation, possible uniquement après la prise en charge (contrainte
   d'unicité en base). Publiés sur la landing seulement avec l'accord du client, prénom + initiale, **quelle
   que soit la note**. Côté navette, les notes de 1 ou 2 ressortent en rouge pour rappeler le client.
+- **Notifications push (Web Push, VAPID)** : le chauffeur active les notifications une fois ; au « J'ai mes
+  bagages », il reçoit une notification même site fermé, qui ouvre directement la fiche du client. Les
+  abonnements sont en base, les appareils désabonnés sont nettoyés automatiquement. Sur iPhone, il faut
+  d'abord ajouter le site à l'écran d'accueil (manifeste PWA fourni).
 - **Temps réel** par rafraîchissement automatique toutes les 4 à 5 secondes : simple et suffisant à cette
   échelle (WebSocket ou SSE envisageables ensuite).
 
@@ -103,7 +107,7 @@ Variables à définir dans Vercel : `DATABASE_URL` (pooled), `APP_URL` (adresse 
 `STRIPE_SECRET_KEY` (`sk_test_…`), `STRIPE_WEBHOOK_SECRET` (endpoint
 `https://…/api/stripe/webhook` créé dans le tableau de bord Stripe, mode test, événements
 `checkout.session.completed` et `checkout.session.expired`), `GMAIL_USER`, `GMAIL_APP_PASSWORD`,
-`SHUTTLE_ACCESS_CODE`.
+`SHUTTLE_ACCESS_CODE`, `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT`.
 
 ## Tests
 

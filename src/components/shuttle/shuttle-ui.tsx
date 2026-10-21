@@ -109,7 +109,14 @@ export function ActiveCard({ row, now }: { row: ShuttleRow; now: Date }) {
   const waitingMin = Math.max(0, Math.round((now.getTime() - row.bagsReadyAt!.getTime()) / 60000));
   const ready = row.pickupStatus === "bags_ready";
   return (
-    <div className={cn("flex flex-col rounded-3xl border p-6", STATUS_STYLE[row.pickupStatus].card)}>
+    // The id lets a notification link straight to this customer (/navette#client-<id>).
+    <div
+      id={`client-${row.id}`}
+      className={cn(
+        "flex scroll-mt-24 flex-col rounded-3xl border p-6 target:bg-primary/5",
+        STATUS_STYLE[row.pickupStatus].card,
+      )}
+    >
       <div className="flex items-start justify-between gap-3">
         <p className="font-mono text-3xl font-semibold tracking-tight">{row.returnTerminal}</p>
         <StatusPill status={row.pickupStatus} />

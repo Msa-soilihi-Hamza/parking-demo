@@ -3,10 +3,12 @@ import Link from "next/link";
 import { connection } from "next/server";
 import { Suspense } from "react";
 import { AutoRefresh } from "@/components/auto-refresh";
+import { PushToggle } from "@/components/shuttle/push-toggle";
 import { Accent, ActiveCard, PageTitle, Rows, dayFormat } from "@/components/shuttle/shuttle-ui";
 import { Skeleton } from "@/components/ui/skeleton";
 import { formatTime, parisDayBounds } from "@/lib/time";
 import { listActivePickups, listPickedUp, listUpcomingReturns } from "@/server/bookings";
+import { vapidPublicKey } from "@/server/push";
 import { hasShuttleAccess } from "@/server/shuttle-access";
 
 export default function LivePage() {
@@ -46,6 +48,7 @@ async function Live() {
             </>
           )}
         </PageTitle>
+        <PushToggle publicKey={vapidPublicKey()} />
         {active.length > 0 && (
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {active.map((row) => (

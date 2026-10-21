@@ -101,6 +101,16 @@ export const reviews = pgTable(
   ],
 );
 
+/** Shuttle team devices that accepted push notifications (one row per browser). */
+export const pushSubscriptions = pgTable("push_subscriptions", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  // The push service URL identifies the device; re-subscribing updates the keys.
+  endpoint: text("endpoint").notNull().unique(),
+  p256dh: text("p256dh").notNull(),
+  auth: text("auth").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
 export type Parking = typeof parkings.$inferSelect;
 export type Booking = typeof bookings.$inferSelect;
 export type Review = typeof reviews.$inferSelect;
