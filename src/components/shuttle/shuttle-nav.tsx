@@ -8,6 +8,7 @@ const LINKS = [
   { href: "/navette", label: "En direct" },
   { href: "/navette/planning", label: "Planning" },
   { href: "/navette/historique", label: "Historique" },
+  { href: "/navette/accueil", label: "Accueil" },
 ];
 
 export function ShuttleNav() {
@@ -15,7 +16,8 @@ export function ShuttleNav() {
   return (
     <nav className="flex items-center justify-center gap-1 text-sm">
       {LINKS.map((link) => {
-        const active = pathname === link.href;
+        // A booking opened from the front desk keeps "Accueil" highlighted.
+        const active = pathname === link.href || (link.href === "/navette/accueil" && pathname.startsWith(`${link.href}/`));
         return (
           <Link
             key={link.href}

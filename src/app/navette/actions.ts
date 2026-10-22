@@ -7,8 +7,9 @@ import { after } from "next/server";
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { bookings } from "@/db/schema";
+import { arrivalPath, normalizeReference, normalizeSpot } from "@/lib/arrival";
 import { PICKUP_STATUSES, type PickupStatus } from "@/lib/pickup";
-import { advancePickup } from "@/server/bookings";
+import { advancePickup, checkInVehicle } from "@/server/bookings";
 import { sendReviewRequest } from "@/server/mailer";
 import {
   deleteSubscription,
@@ -54,7 +55,32 @@ export async function shuttleLoginAction(_prev: string | null, formData: FormDat
     path: "/",
     maxAge: 60 * 60 * 12,
   });
-  redirect("/navette");
+  // Back to the page that asked for the login (a scanned QR code), never outside the team space.
+  const next = String(formData.get("next") ?? "");
+  redirect(/^\/navette(\/[\w%-]+)*$/.test(next) ? next : "/navette");
+}
+
+/** Front desk: opens a booking from the reference typed by hand. */
+export async function findArrivalAction(_prev: string | null, formData: FormData) {
+  if (!(await hasShuttleAccess())) return "Accès refusé.";
+  const reference = normalizeReference(String(formData.get("reference") ?? ""));
+  if (!reference) return "Référence invalide : elle ressemble à ESC-AB12CD.";
+  redirect(arrivalPath(reference));
+}
+
+export type CheckInState = { error?: string };
+
+/** Front desk: the customer left the car at this spot. */
+export async function checkInVehicleAction(_prev: CheckInState, formData: FormData): Promise<CheckInState> {
+  if (!(await hasShuttleAccess())) return { error: "Accès refusé." };
+  const reference = normalizeReference(String(formData.get("reference") ?? ""));
+  const spot = normalizeSpot(String(formData.get("spot") ?? ""));
+  if (!reference) return { error: "Référence invalide." };
+  if (!spot) return { error: "Indiquez la place : lettres et chiffres, par exemple B12." };
+  const result = await checkInVehicle(reference, spot);
+  if (!result.ok) return { error: result.error };
+  refresh();
+  return {};
 }
 
 export async function advancePickupAction(formData: FormData) {

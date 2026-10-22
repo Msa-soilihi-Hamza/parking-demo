@@ -10,6 +10,8 @@ import { bookings, parkings, reviews } from "./schema";
 
 /** The customer link used in the demo: /reservation/demo-retour */
 export const DEMO_TOKEN = "demo-retour";
+/** The customer about to leave their car: /reservation/demo-arrivee shows the QR code. */
+export const DEMO_ARRIVAL_TOKEN = "demo-arrivee";
 
 const MIN = 60 * 1000;
 const HOUR = 60 * MIN;
@@ -32,6 +34,11 @@ function plate() {
   const l = () => LETTERS[Math.floor(rand() * LETTERS.length)];
   const n = String(Math.floor(rand() * 900) + 100);
   return `${l()}${l()}-${n}-${l()}${l()}`;
+}
+
+/** "C14": a row letter and a number, as painted on the ground. */
+function spot() {
+  return `${"ABCDEFGH"[Math.floor(rand() * 8)]}${1 + Math.floor(rand() * 40)}`;
 }
 
 let counter = 0;
@@ -93,7 +100,8 @@ async function main() {
   function makeBooking(returnAt: number, pickup: PickupStatus, overrides: Partial<Row> = {}) {
     const parking = overrides.parkingId === orly.id ? orly : rand() < 0.45 ? orly : cdg;
     const stayDays = 2 + Math.floor(rand() * 12);
-    const dropoffAt = new Date(roundTo5(returnAt - stayDays * DAY - rand() * 8 * HOUR));
+    const defaultDropoff = new Date(roundTo5(returnAt - stayDays * DAY - rand() * 8 * HOUR));
+    const dropoffAt = overrides.dropoffAt instanceof Date ? overrides.dropoffAt : defaultDropoff;
     const ret = new Date(returnAt);
     const price = quote(parking.dailyRateCents, dropoffAt, ret);
     const first = pick(FIRST_NAMES);
@@ -109,6 +117,8 @@ async function main() {
         : null;
     const pickedUpAt =
       pickup === "picked_up" ? new Date(enRouteAt!.getTime() + (8 + rand() * 10) * MIN) : null;
+    // Cars already dropped off were checked in at the front desk a few minutes after arrival.
+    const parked = dropoffAt.getTime() < now;
 
     rows.push({
       reference: reference(),
@@ -125,6 +135,8 @@ async function main() {
       priceCents: price.ok ? price.totalCents : 0,
       status: "confirmed",
       pickupStatus: pickup,
+      parkedAt: parked ? new Date(dropoffAt.getTime() + (2 + rand() * 8) * MIN) : null,
+      parkingSpot: parked ? spot() : null,
       bagsReadyAt,
       enRouteAt,
       pickedUpAt,
@@ -182,6 +194,21 @@ async function main() {
     phone: "06 00 00 00 00",
     passengers: 2,
     returnTerminal: null,
+  });
+
+  // A customer arriving at the parking right now: its QR code opens the front desk page.
+  makeBooking(roundTo5(now + 7 * DAY), "scheduled", {
+    accessToken: DEMO_ARRIVAL_TOKEN,
+    reference: "ESC-DEMOQR",
+    parkingId: orly.id,
+    customerName: "Visiteur Arrivée",
+    email: "arrivee@example.com",
+    phone: "06 00 00 00 01",
+    passengers: 2,
+    dropoffAt: new Date(roundTo5(now + 10 * MIN)),
+    returnTerminal: null,
+    paidAt: new Date(now - 3 * DAY),
+    createdAt: new Date(now - 3 * DAY),
   });
 
   const inserted = await db

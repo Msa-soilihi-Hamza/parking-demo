@@ -64,6 +64,9 @@ export const bookings = pgTable(
     emailVerifiedAt: timestamp("email_verified_at", { withTimezone: true }),
     // When the spot started being held for payment
     heldAt: timestamp("held_at", { withTimezone: true }),
+    // Recorded by the front desk when the customer leaves the car (QR code scanned).
+    parkedAt: timestamp("parked_at", { withTimezone: true }),
+    parkingSpot: text("parking_spot"),
     pickupStatus: pickupStatus("pickup_status").notNull().default("scheduled"),
     bagsReadyAt: timestamp("bags_ready_at", { withTimezone: true }),
     enRouteAt: timestamp("en_route_at", { withTimezone: true }),
@@ -75,6 +78,7 @@ export const bookings = pgTable(
   (t) => [
     index("bookings_parking_period_idx").on(t.parkingId, t.dropoffAt, t.returnAt),
     index("bookings_return_idx").on(t.returnAt),
+    index("bookings_dropoff_idx").on(t.dropoffAt),
   ],
 );
 

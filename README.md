@@ -10,11 +10,15 @@ Projet de démonstration (marque et données fictives) : un parcours de réserva
 |---|---|
 | `/` | Landing page : promesse, fonctionnement, tarifs |
 | `/reserver` | Parking et dates avec **prix immédiat**, coordonnées, **vérification de l'e-mail par code à 6 chiffres**, puis **paiement Stripe** (mode test) |
-| `/reservation/[token]` | Lien personnel du client (reçu par e-mail) : bouton « J'ai mes bagages » à tout moment (annulable tant que la navette n'est pas partie), suivi en direct, puis avis (étoiles + commentaire) |
+| `/reservation/[token]` | Lien personnel du client (reçu par e-mail) : **QR code à présenter à l'accueil**, bouton « J'ai mes bagages » à tout moment (annulable tant que la navette n'est pas partie), suivi en direct, puis avis (étoiles + commentaire) |
 | `/navette` | Équipe navette : clients à récupérer maintenant, planning par jour, historique ; **notifications push** quand un client a ses bagages |
+| `/navette/accueil` | Accueil du parking : arrivées du jour ; le QR code du client (ou sa référence) ouvre sa fiche, l'employé note la **place** et valide « Véhicule déposé » |
 
-Pour tester sans réserver : `/reservation/demo-retour` (avion qui vient d'atterrir) et `/navette`
-(code `navette`).
+Pour tester sans réserver (code de l'espace équipe : `navette`) :
+
+- `/reservation/demo-retour` : avion qui vient d'atterrir, bouton « J'ai mes bagages » ;
+- `/reservation/demo-arrivee` : client qui arrive au parking, avec son QR code. Scanné avec un téléphone
+  connecté à l'espace équipe, il ouvre `/navette/accueil/ESC-DEMOQR`.
 
 ## Choix techniques
 
@@ -48,6 +52,11 @@ Pour tester sans réserver : `/reservation/demo-retour` (avion qui vient d'atter
   bagages », il reçoit une notification même site fermé, qui ouvre directement la fiche du client. Les
   abonnements sont en base, les appareils désabonnés sont nettoyés automatiquement. Sur iPhone, il faut
   d'abord ajouter le site à l'écran d'accueil (manifeste PWA fourni).
+- **Arrivée au parking par QR code** : le QR code (page de réservation et e-mail de confirmation) ne
+  contient que la référence, qui ne donne accès à rien sans la connexion de l'équipe, contrairement au
+  lien privé du client. L'enregistrement n'est possible que pour une réservation payée, et une seule fois
+  (`UPDATE … WHERE parked_at IS NULL`) : un second scan ne change pas la place notée. Dans l'e-mail, le QR
+  code est une image jointe (`cid:`), car Gmail n'affiche pas les images `data:`.
 - **Temps réel** par rafraîchissement automatique toutes les 4 à 5 secondes : simple et suffisant à cette
   échelle (WebSocket ou SSE envisageables ensuite).
 
@@ -120,4 +129,5 @@ npm test
 - Machine à états du retour
 - Code e-mail (format, vérification)
 - Nom public des avis (« Sarah M. »)
-- Intégration avec la base : vérification e-mail (mauvais code, blocage après 5 essais), surréservation simultanée, enchaînement de séjours, paiement confirmé une seule fois, annulation du bouton, avis (avant/après prise en charge, un seul)
+- Référence et place saisies à l'accueil (format, majuscules, espaces)
+- Intégration avec la base : vérification e-mail (mauvais code, blocage après 5 essais), surréservation simultanée, enchaînement de séjours, paiement confirmé une seule fois, annulation du bouton, avis (avant/après prise en charge, un seul), dépôt du véhicule (une seule fois, refusé si non payée)

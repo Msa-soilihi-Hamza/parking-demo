@@ -3,6 +3,7 @@ import type { Booking, Parking } from "@/db/schema";
 import { SUPPORT_PHONE } from "@/lib/contact";
 import { formatEuros } from "@/lib/pricing";
 import { formatDateTime } from "@/lib/time";
+import { arrivalQrPng } from "@/server/qr";
 import { appUrl } from "@/server/stripe";
 
 // Gmail SMTP with an app password: free and delivers to any address.
@@ -22,7 +23,9 @@ export function mailerConfigured() {
 // Reserved by RFC 2606: used by the demo data, never deliverable.
 const isDemoAddress = (to: string) => /@example\.(com|org|net)$/i.test(to);
 
-async function send(to: string, subject: string, text: string, html: string) {
+type Attachment = { filename: string; content: Buffer; cid: string };
+
+async function send(to: string, subject: string, text: string, html: string, attachments: Attachment[] = []) {
   if (isDemoAddress(to)) {
     console.info(`[e-mail de démo non envoyé] À : ${to} · Objet : ${subject}`);
     return;
@@ -35,7 +38,7 @@ async function send(to: string, subject: string, text: string, html: string) {
     }
     throw new Error("L'envoi d'e-mails n'est pas configuré (GMAIL_USER, GMAIL_APP_PASSWORD).");
   }
-  await transporter.sendMail({ from: `"Escale Parking" <${user}>`, to, subject, text, html });
+  await transporter.sendMail({ from: `"Escale Parking" <${user}>`, to, subject, text, html, attachments });
 }
 
 function layout(content: string) {
@@ -87,11 +90,14 @@ export async function sendReviewRequest(booking: Booking) {
 
 export async function sendBookingConfirmation(booking: Booking, parking: Parking) {
   const link = `${appUrl()}/reservation/${booking.accessToken}`;
+  // Shown with cid: (an attached image): Gmail does not display data: images.
+  const qr = await arrivalQrPng(booking.reference);
   await send(
     booking.email,
     `Réservation confirmée · ${booking.reference}`,
     `Votre réservation ${booking.reference} est confirmée.\n` +
       `${parking.name}, dépôt ${formatDateTime(booking.dropoffAt)}, retour ${formatDateTime(booking.returnAt)}.\n` +
+      `À l'arrivée au parking, présentez le QR code de cet e-mail ou la référence ${booking.reference} à l'accueil.\n` +
       `À votre retour, ouvrez ce lien et appuyez sur « J'ai mes bagages » : ${link}`,
     layout(`<p>Votre réservation <strong>${booking.reference}</strong> est confirmée.</p>
   <table style="width:100%;font-size:14px;margin:16px 0;border-collapse:collapse">
@@ -100,7 +106,13 @@ export async function sendBookingConfirmation(booking: Booking, parking: Parking
     <tr><td style="color:#737373;padding:4px 0">Atterrissage retour</td><td>${formatDateTime(booking.returnAt)}</td></tr>
     <tr><td style="color:#737373;padding:4px 0">Montant payé</td><td>${formatEuros(booking.priceCents)}</td></tr>
   </table>
+  <div style="text-align:center;border:1px solid #e5e5e5;border-radius:12px;padding:16px;margin:16px 0">
+    <p style="margin:0 0 8px;font-weight:bold">À l'arrivée au parking</p>
+    <img src="cid:arrival-qr" width="160" height="160" alt="QR code de la réservation ${booking.reference}" />
+    <p style="margin:8px 0 0;color:#737373;font-size:13px">Présentez ce QR code à l'accueil, ou donnez la référence <strong style="color:#171717;font-family:monospace">${booking.reference}</strong>.</p>
+  </div>
   <p>À votre retour, ouvrez votre réservation et appuyez sur « J'ai mes bagages » : la navette vient vous chercher. Un imprévu ? Appelez le ${SUPPORT_PHONE}, 24h/24.</p>
   <p><a href="${link}" style="display:inline-block;background:#b91c1c;color:#fff;padding:12px 20px;border-radius:8px;text-decoration:none">Ouvrir ma réservation</a></p>`),
+    [{ filename: `${booking.reference}.png`, content: qr, cid: "arrival-qr" }],
   );
 }

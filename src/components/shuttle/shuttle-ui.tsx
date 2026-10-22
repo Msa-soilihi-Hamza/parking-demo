@@ -130,6 +130,11 @@ export function ActiveCard({ row, now }: { row: ShuttleRow; now: Date }) {
       <a href={`tel:${row.phone.replace(/\s/g, "")}`} className="text-sm text-muted-foreground hover:text-foreground">
         {row.phone}
       </a>
+      {row.parkingSpot && (
+        <p className="text-sm text-muted-foreground">
+          Véhicule place <span className="font-mono text-foreground">{row.parkingSpot}</span>
+        </p>
+      )}
       <form action={advancePickupAction} className="mt-6">
         <input type="hidden" name="id" value={row.id} />
         <input type="hidden" name="from" value={row.pickupStatus} />

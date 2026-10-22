@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { and, asc, desc, eq, gte, inArray, lt, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, isNull, lt, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { bookings, parkings, reviews, type Booking, type Parking } from "@/db/schema";
 import { canTransition, type PickupStatus } from "@/lib/pickup";
@@ -269,6 +269,47 @@ export async function getBookingByToken(token: string) {
     .innerJoin(parkings, eq(bookings.parkingId, parkings.id))
     .where(eq(bookings.accessToken, token));
   return row ?? null;
+}
+
+/** Front desk lookup, from the QR code or the reference typed by hand. */
+export async function getBookingByReference(reference: string) {
+  const [row] = await db
+    .select({ booking: bookings, parking: parkings })
+    .from(bookings)
+    .innerJoin(parkings, eq(bookings.parkingId, parkings.id))
+    .where(eq(bookings.reference, reference));
+  return row ?? null;
+}
+
+/**
+ * The customer left the car: records the time and the spot. Only for a paid
+ * booking, and only once (the WHERE makes a second scan or double tap a no-op).
+ */
+export async function checkInVehicle(reference: string, spot: string): Promise<Result<{ booking: Booking }>> {
+  const [parked] = await db
+    .update(bookings)
+    .set({ parkedAt: new Date(), parkingSpot: spot })
+    .where(
+      and(eq(bookings.reference, reference), eq(bookings.status, "confirmed"), isNull(bookings.parkedAt)),
+    )
+    .returning();
+  if (parked) return { ok: true, booking: parked };
+
+  const found = await getBookingByReference(reference);
+  if (!found) return { ok: false, error: "Réservation introuvable." };
+  if (found.booking.status !== "confirmed") return { ok: false, error: "Cette réservation n'est pas payée." };
+  return { ok: false, error: "Ce véhicule est déjà enregistré." };
+}
+
+/** Confirmed bookings whose drop-off is planned in [start, end), earliest first. */
+export async function listArrivals(start: Date, end: Date): Promise<ShuttleRow[]> {
+  const rows = await db
+    .select({ booking: bookings, parkingName: parkings.name, airport: parkings.airport })
+    .from(bookings)
+    .innerJoin(parkings, eq(bookings.parkingId, parkings.id))
+    .where(and(eq(bookings.status, "confirmed"), gte(bookings.dropoffAt, start), lt(bookings.dropoffAt, end)))
+    .orderBy(asc(bookings.dropoffAt));
+  return rows.map((r) => ({ ...r.booking, parkingName: r.parkingName, airport: r.airport }));
 }
 
 /**

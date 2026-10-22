@@ -15,6 +15,7 @@ import { SUPPORT_PHONE, SUPPORT_PHONE_HREF } from "@/lib/contact";
 import { formatEuros } from "@/lib/pricing";
 import { formatDateTime, formatTime } from "@/lib/time";
 import { confirmPayment, getBookingByToken } from "@/server/bookings";
+import { arrivalQrSvg } from "@/server/qr";
 import { getReviewForBooking } from "@/server/reviews";
 import { getStripe } from "@/server/stripe";
 
@@ -56,6 +57,11 @@ async function Reservation({
   const { booking, parking } = found;
   const review = booking.pickupStatus === "picked_up" ? await getReviewForBooking(booking.id) : null;
   const waiting = booking.pickupStatus === "bags_ready" || booking.pickupStatus === "en_route";
+  // The QR code is only useful until the car has been left at the parking.
+  const arrivalQr =
+    booking.status === "confirmed" && !booking.parkedAt && booking.pickupStatus === "scheduled"
+      ? await arrivalQrSvg(booking.reference)
+      : null;
 
   return (
     <div className="space-y-6">
@@ -90,6 +96,34 @@ async function Reservation({
         <Alert variant="destructive">
           <AlertDescription>Cette réservation a été annulée (paiement non finalisé).</AlertDescription>
         </Alert>
+      )}
+
+      {arrivalQr && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Votre arrivée au parking</CardTitle>
+            <CardDescription>
+              Présentez ce QR code à l&apos;accueil le {formatDateTime(booking.dropoffAt)}. Pas de réseau ? Donnez
+              simplement la référence.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="flex flex-col items-center gap-3 sm:flex-row sm:gap-6">
+            {/* Generated on the server from our own URL: no user input in the markup. */}
+            <div
+              className="size-44 shrink-0 rounded-xl border bg-white p-2 [&>svg]:size-full"
+              role="img"
+              aria-label={`QR code de la réservation ${booking.reference}`}
+              dangerouslySetInnerHTML={{ __html: arrivalQr }}
+            />
+            <div className="text-center sm:text-left">
+              <p className="text-sm text-muted-foreground">Référence</p>
+              <p className="font-mono text-2xl font-semibold tracking-wider">{booking.reference}</p>
+              <p className="mt-2 text-sm text-muted-foreground">
+                {parking.name} · véhicule <span className="font-mono">{booking.plate}</span>
+              </p>
+            </div>
+          </CardContent>
+        </Card>
       )}
 
       {booking.status === "confirmed" && (
@@ -203,7 +237,11 @@ async function Reservation({
           <dl className="grid gap-x-6 gap-y-4 text-sm sm:grid-cols-2">
             <Item label="Parking" value={`${parking.name}`} />
             <Item label="Véhicule" value={booking.plate} mono />
-            <Item label="Dépôt" value={formatDateTime(booking.dropoffAt)} />
+            <Item
+              label={booking.parkedAt ? "Déposé" : "Dépôt"}
+              value={formatDateTime(booking.parkedAt ?? booking.dropoffAt)}
+            />
+            {booking.parkingSpot && <Item label="Place" value={booking.parkingSpot} mono />}
             <Item label="Atterrissage retour" value={formatDateTime(booking.returnAt)} />
             <Item label="Passagers" value={String(booking.passengers)} />
             <Item label="Montant" value={formatEuros(booking.priceCents)} />

@@ -6,6 +6,7 @@ import { bookings, parkings, reviews } from "@/db/schema";
 import {
   advancePickup,
   cancelPickupRequest,
+  checkInVehicle,
   confirmPayment,
   createUnverifiedBooking,
   verifyEmailAndHold,
@@ -144,6 +145,43 @@ describe("cancelling the bags button", () => {
     await advancePickup({ accessToken: booking.accessToken }, "scheduled", "bags_ready");
     await advancePickup({ id: booking.id }, "bags_ready", "en_route");
     expect(await cancelPickupRequest(booking.accessToken)).toBe(false);
+  });
+});
+
+describe("front desk check-in", () => {
+  async function bookingRow(id: string) {
+    const [row] = await db.select().from(bookings).where(eq(bookings.id, id));
+    return row;
+  }
+
+  it("records the time and the spot once, then refuses a second scan", async () => {
+    const id = await requestWithKnownCode(stay("2027-09-01T08:00Z", "2027-09-02T08:00Z", "Arrivée"));
+    await verifyEmailAndHold(id, CODE);
+    await confirmPayment(id);
+    const { reference } = await bookingRow(id);
+
+    const first = await checkInVehicle(reference, "B12");
+    expect(first.ok).toBe(true);
+    const parked = await bookingRow(id);
+    expect(parked.parkingSpot).toBe("B12");
+    expect(parked.parkedAt).toBeInstanceOf(Date);
+
+    const second = await checkInVehicle(reference, "C3");
+    expect(second).toEqual({ ok: false, error: "Ce véhicule est déjà enregistré." });
+    expect((await bookingRow(id)).parkingSpot).toBe("B12");
+  });
+
+  it("refuses a car whose booking is not paid", async () => {
+    const id = await requestWithKnownCode(stay("2027-09-10T08:00Z", "2027-09-11T08:00Z", "Impayé"));
+    await verifyEmailAndHold(id, CODE);
+    const { reference } = await bookingRow(id);
+
+    expect(await checkInVehicle(reference, "A1")).toEqual({ ok: false, error: "Cette réservation n'est pas payée." });
+    expect((await bookingRow(id)).parkedAt).toBeNull();
+  });
+
+  it("says when the reference does not exist", async () => {
+    expect(await checkInVehicle("ESC-NOPE00", "A1")).toEqual({ ok: false, error: "Réservation introuvable." });
   });
 });
 
