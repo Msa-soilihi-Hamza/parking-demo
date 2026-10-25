@@ -2,7 +2,7 @@
 
 import { Loader2Icon, LogOutIcon } from "lucide-react";
 import { useFormStatus } from "react-dom";
-import { shuttleLogoutAction } from "@/app/navette/actions";
+import { teamLogoutAction } from "@/app/team-actions";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -16,9 +16,16 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
+import type { TeamSpace } from "@/server/team-access";
 
-/** "Déconnexion" asks for confirmation first: a driver mid-shift should not lose the board by mistake. */
-export function LogoutButton() {
+const LOST: Record<TeamSpace, string> = {
+  navette: "Vous ne verrez plus les demandes des clients sur cet appareil.",
+  accueil: "Vous ne pourrez plus enregistrer de véhicules sur cet appareil.",
+  gestion: "Vous ne pourrez plus gérer les codes promo sur cet appareil.",
+};
+
+/** "Déconnexion" asks for confirmation first: nobody mid-shift should lose their screen by mistake. */
+export function LogoutButton({ space }: { space: TeamSpace }) {
   return (
     <AlertDialog>
       <AlertDialogTrigger render={<Button variant="outline" size="sm" />}>Déconnexion</AlertDialogTrigger>
@@ -29,13 +36,13 @@ export function LogoutButton() {
           </AlertDialogMedia>
           <AlertDialogTitle>Se déconnecter ?</AlertDialogTitle>
           <AlertDialogDescription>
-            Vous ne verrez plus les demandes des clients sur cet appareil. Il faudra saisir le code d&apos;accès
-            pour revenir.
+            {LOST[space]} Il faudra saisir le code d&apos;accès pour revenir.
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
           <AlertDialogCancel>Annuler</AlertDialogCancel>
-          <form action={shuttleLogoutAction}>
+          <form action={teamLogoutAction}>
+            <input type="hidden" name="space" value={space} />
             <ConfirmButton />
           </form>
         </AlertDialogFooter>

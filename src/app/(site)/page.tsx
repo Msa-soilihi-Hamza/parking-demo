@@ -282,9 +282,17 @@ export default function LandingPage() {
         </Link>{" "}
         ·{" "}
         <Link href="/navette" className="underline underline-offset-4 hover:text-foreground">
-          écran de l&apos;équipe navette
+          espace navette
         </Link>{" "}
-        (code <code className="font-mono">navette</code>)
+        (code <code className="font-mono">navette</code>) ·{" "}
+        <Link href="/accueil" className="underline underline-offset-4 hover:text-foreground">
+          accueil du parking
+        </Link>{" "}
+        (code <code className="font-mono">accueil</code>) ·{" "}
+        <Link href="/gestion" className="underline underline-offset-4 hover:text-foreground">
+          codes promo
+        </Link>{" "}
+        (code <code className="font-mono">gestion</code>)
       </section>
     </>
   );

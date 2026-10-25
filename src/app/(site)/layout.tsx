@@ -12,8 +12,15 @@ export default function SiteLayout({ children }: LayoutProps<"/">) {
             Escale
           </Link>
           <nav className="flex items-center gap-1">
-            <Button variant="ghost" size="sm" render={<Link href="/navette" />} nativeButton={false}>
-              Équipe navette
+            {/* The three team spaces; on phones only "Réserver" stays, the links are in the demo section. */}
+            <Button variant="ghost" size="sm" className="hidden sm:inline-flex" render={<Link href="/navette" />} nativeButton={false}>
+              Navette
+            </Button>
+            <Button variant="ghost" size="sm" className="hidden sm:inline-flex" render={<Link href="/accueil" />} nativeButton={false}>
+              Accueil
+            </Button>
+            <Button variant="ghost" size="sm" className="hidden sm:inline-flex" render={<Link href="/gestion" />} nativeButton={false}>
+              Gestion
             </Button>
             <Button size="sm" render={<Link href="/reserver" />} nativeButton={false}>
               Réserver

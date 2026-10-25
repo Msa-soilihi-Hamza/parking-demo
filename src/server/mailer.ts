@@ -25,7 +25,9 @@ const isDemoAddress = (to: string) => /@example\.(com|org|net)$/i.test(to);
 
 type Attachment = { filename: string; content: Buffer; cid: string };
 
-async function send(to: string, subject: string, text: string, html: string, attachments: Attachment[] = []) {
+async function send(to: string | null, subject: string, text: string, html: string, attachments: Attachment[] = []) {
+  // A customer registered at the front desk may have left no e-mail.
+  if (!to) return;
   if (isDemoAddress(to)) {
     console.info(`[e-mail de démo non envoyé] À : ${to} · Objet : ${subject}`);
     return;
@@ -88,6 +90,27 @@ export async function sendReviewRequest(booking: Booking) {
   );
 }
 
+/** A customer registered at the desk: the car is already parked, only the return is left. */
+export async function sendWalkInConfirmation(booking: Booking, parking: Parking) {
+  const link = `${appUrl()}/reservation/${booking.accessToken}`;
+  await send(
+    booking.email,
+    `Votre véhicule est garé · ${booking.reference}`,
+    `Votre véhicule ${booking.plate} est garé au ${parking.name}, place ${booking.parkingSpot}.\n` +
+      `Payé sur place : ${formatEuros(booking.priceCents)}. Retour prévu ${formatDateTime(booking.returnAt)}.\n` +
+      `À votre retour, ouvrez ce lien et appuyez sur « J'ai mes bagages » : ${link}`,
+    layout(`<p>Votre véhicule <strong>${booking.plate}</strong> est garé, place <strong style="font-family:monospace">${booking.parkingSpot}</strong>.</p>
+  <table style="width:100%;font-size:14px;margin:16px 0;border-collapse:collapse">
+    <tr><td style="color:#737373;padding:4px 0">Référence</td><td style="font-family:monospace">${booking.reference}</td></tr>
+    <tr><td style="color:#737373;padding:4px 0">Parking</td><td>${parking.name}</td></tr>
+    <tr><td style="color:#737373;padding:4px 0">Atterrissage retour</td><td>${formatDateTime(booking.returnAt)}</td></tr>
+    <tr><td style="color:#737373;padding:4px 0">Payé sur place</td><td>${formatEuros(booking.priceCents)}</td></tr>
+  </table>
+  <p>À votre retour, ouvrez votre réservation et appuyez sur « J'ai mes bagages » : la navette vient vous chercher. Un imprévu ? Appelez le ${SUPPORT_PHONE}, 24h/24.</p>
+  <p><a href="${link}" style="display:inline-block;background:#b91c1c;color:#fff;padding:12px 20px;border-radius:8px;text-decoration:none">Ouvrir ma réservation</a></p>`),
+  );
+}
+
 export async function sendBookingConfirmation(booking: Booking, parking: Parking) {
   const link = `${appUrl()}/reservation/${booking.accessToken}`;
   // Shown with cid: (an attached image): Gmail does not display data: images.
@@ -104,6 +127,7 @@ export async function sendBookingConfirmation(booking: Booking, parking: Parking
     <tr><td style="color:#737373;padding:4px 0">Parking</td><td>${parking.name}</td></tr>
     <tr><td style="color:#737373;padding:4px 0">Dépôt</td><td>${formatDateTime(booking.dropoffAt)}</td></tr>
     <tr><td style="color:#737373;padding:4px 0">Atterrissage retour</td><td>${formatDateTime(booking.returnAt)}</td></tr>
+    ${booking.discountCents > 0 ? `<tr><td style="color:#737373;padding:4px 0">Code promo</td><td>-${formatEuros(booking.discountCents)} (déduit)</td></tr>` : ""}
     <tr><td style="color:#737373;padding:4px 0">Montant payé</td><td>${formatEuros(booking.priceCents)}</td></tr>
   </table>
   <div style="text-align:center;border:1px solid #e5e5e5;border-radius:12px;padding:16px;margin:16px 0">

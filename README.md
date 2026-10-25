@@ -9,16 +9,19 @@ Projet de démonstration (marque et données fictives) : un parcours de réserva
 | Écran | Rôle |
 |---|---|
 | `/` | Landing page : promesse, fonctionnement, tarifs |
-| `/reserver` | Parking et dates avec **prix immédiat**, coordonnées, **vérification de l'e-mail par code à 6 chiffres**, puis **paiement Stripe** (mode test) |
+| `/reserver` | Parking et dates avec **prix immédiat**, **code promo**, coordonnées, **vérification de l'e-mail par code à 6 chiffres**, puis **paiement Stripe** (mode test) |
 | `/reservation/[token]` | Lien personnel du client (reçu par e-mail) : **QR code à présenter à l'accueil**, bouton « J'ai mes bagages » à tout moment (annulable tant que la navette n'est pas partie), suivi en direct, puis avis (étoiles + commentaire) |
-| `/navette` | Équipe navette : clients à récupérer maintenant, planning par jour, historique ; **notifications push** quand un client a ses bagages |
-| `/navette/accueil` | Accueil du parking : arrivées du jour ; le QR code du client (ou sa référence) ouvre sa fiche, l'employé note la **place** et valide « Véhicule déposé » |
+| `/navette` | **Espace navette** (chauffeurs, code `navette`) : « En direct » (clients à récupérer maintenant, **notifications push** quand un client a ses bagages) et « Journées » (une bande de jours du passé au futur : retours prévus, puis temps d'attente et notes une fois la journée passée) |
+| `/accueil` | **Accueil du parking** (code `accueil`) : « Arrivées » (voitures attendues aujourd'hui ; le QR code du client ou sa référence ouvre sa fiche, l'agent valide « Véhicule déposé » avec la **place proposée** ou une autre), « Plan » (les places de chaque parking, libres, occupées ou à sortir bientôt, et la prochaine place à donner), « Véhicules » (voitures sur place, recherche par plaque, nom, référence ou place, et liste **À préparer** : clients en route ou de retour dans les 3 h) et « Nouveau client » (un client **sans réservation** paie sur place et laisse sa voiture) |
+| `/gestion` | **Gestion** (responsable, code `gestion`) : créer un code promo (réduction en % ou en €, **valable N jours**, nombre d'utilisations facultatif), voir les utilisations et le statut de chaque code (actif, expiré, épuisé, désactivé), désactiver ou réactiver |
 
-Pour tester sans réserver (code de l'espace équipe : `navette`) :
+Chaque métier a son espace et son code : les chauffeurs ne voient que la navette, l'accueil que le parking, le responsable que la gestion des codes promo.
+
+Pour tester sans réserver :
 
 - `/reservation/demo-retour` : avion qui vient d'atterrir, bouton « J'ai mes bagages » ;
 - `/reservation/demo-arrivee` : client qui arrive au parking, avec son QR code. Scanné avec un téléphone
-  connecté à l'espace équipe, il ouvre `/navette/accueil/ESC-DEMOQR`.
+  connecté à l'accueil, il ouvre `/accueil/reservation/ESC-DEMOQR`.
 
 ## Choix techniques
 
@@ -40,23 +43,37 @@ Pour tester sans réserver (code de l'espace équipe : `navette`) :
 - **Machine à états du retour** : `retour prévu → bagages récupérés → navette en route → pris en charge`.
   Chaque transition est conditionnée au statut courant : un double clic ou deux chauffeurs en même temps
   ne font pas sauter d'étape.
-- **Prix calculé par une seule fonction pure**, utilisée par le formulaire (prix en direct) et par le
-  serveur (montant facturé) : le prix affiché est le prix payé.
-- **Fuseau horaire** : les heures saisies sont en heure de Paris, stockées en UTC. La durée facturée se
-  mesure sur l'horloge de Paris : l'heure en plus du changement d'heure d'octobre n'est pas facturée
-  comme un jour.
-- **Avis clients** : un seul par réservation, possible uniquement après la prise en charge (contrainte
-  d'unicité en base). Publiés sur la landing seulement avec l'accord du client, prénom + initiale, **quelle
-  que soit la note**. Côté navette, les notes de 1 ou 2 ressortent en rouge pour rappeler le client.
-- **Notifications push (Web Push, VAPID)** : le chauffeur active les notifications une fois ; au « J'ai mes
-  bagages », il reçoit une notification même site fermé, qui ouvre directement la fiche du client. Les
-  abonnements sont en base, les appareils désabonnés sont nettoyés automatiquement. Sur iPhone, il faut
-  d'abord ajouter le site à l'écran d'accueil (manifeste PWA fourni).
+- **Prix stables, calculés par le serveur avec les mêmes fonctions partout** (formulaire en direct,
+  réservation, accueil) : le prix affiché est le prix payé. Jours dégressifs (-20 % à partir du 4e jour,
+  -40 % à partir du 8e), puis éventuellement un code promo. Le prix ne dépend pas du remplissage du
+  parking : la tarification dynamique a été étudiée puis écartée (marque « pas chère », même prix pour tous).
+- **Codes promo, créés par le responsable** dans l'espace Gestion : pourcentage ou montant, **valable N
+  jours à partir d'aujourd'hui** (jusqu'à la fin du dernier jour, heure de Paris), nombre d'utilisations
+  limité ou non, désactivable à tout moment (code qui a fuité sur un site de bons plans). Le prix ne
+  descend jamais sous 1 €. Un code refusé n'est jamais retiré en silence : la réservation s'arrête avec le
+  message. Les utilisations sont comptées à partir des réservations (payées ou place retenue), sous verrou
+  de la ligne du code au moment de retenir la place : deux clients ne peuvent pas prendre la dernière
+  utilisation. Codes de démo : `BIENVENUE10` (-10 %), `TOUSSAINT5` (-5 €, 10 jours), `FLASH50` (-50 %,
+  3 réservations), `ETE2026` (expiré).
+- **Parrainage étudié puis écarté** : construit (code client au retour, -10 % pour le filleul, 5 € pour le
+  parrain), puis retiré. Même en codes plutôt qu'en argent, il ouvre trop de portes à la fraude pour une
+  petite équipe (alias e-mail, cartes et voitures empruntées, codes publiés) ; les codes promo du
+  responsable couvrent le besoin marketing avec un risque maîtrisé.
 - **Arrivée au parking par QR code** : le QR code (page de réservation et e-mail de confirmation) ne
   contient que la référence, qui ne donne accès à rien sans la connexion de l'équipe, contrairement au
   lien privé du client. L'enregistrement n'est possible que pour une réservation payée, et une seule fois
   (`UPDATE … WHERE parked_at IS NULL`) : un second scan ne change pas la place notée. Dans l'e-mail, le QR
   code est une image jointe (`cid:`), car Gmail n'affiche pas les images `data:`.
+- **Une voiture par place.** Les places viennent de la capacité de chaque parking (rangées de 20 : A1 à
+  F20 pour 120 places, sans I ni O pour ne pas les confondre avec 1 et 0). L'accueil se voit proposer la
+  première place libre ; une place inexistante ou déjà occupée est refusée, et un index unique partiel
+  (`parking_id, parking_spot` pour les voitures encore sur place) le garantit même si deux agents donnent
+  la même place au même instant (test d'intégration à l'appui).
+- **Client sans réservation** : l'accueil l'enregistre en une page (retour, client, plaque, place) ; le
+  prix vient de la même fonction que le site, et la place est vérifiée sous le même verrou qu'une
+  réservation en ligne : pas de surréservation par l'accueil non plus. Le paiement est noté « sur place »
+  (`payment_method`) et confirmé par une case à cocher. L'e-mail est facultatif : l'écran affiche le lien
+  personnel du client en QR code, qu'il scanne pour avoir le bouton « J'ai mes bagages ».
 - **Temps réel** par rafraîchissement automatique toutes les 4 à 5 secondes : simple et suffisant à cette
   échelle (WebSocket ou SSE envisageables ensuite).
 
@@ -116,7 +133,7 @@ Variables à définir dans Vercel : `DATABASE_URL` (pooled), `APP_URL` (adresse 
 `STRIPE_SECRET_KEY` (`sk_test_…`), `STRIPE_WEBHOOK_SECRET` (endpoint
 `https://…/api/stripe/webhook` créé dans le tableau de bord Stripe, mode test, événements
 `checkout.session.completed` et `checkout.session.expired`), `GMAIL_USER`, `GMAIL_APP_PASSWORD`,
-`SHUTTLE_ACCESS_CODE`, `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT`.
+`SHUTTLE_ACCESS_CODE` (code de la navette), `DESK_ACCESS_CODE` (code de l'accueil), `MANAGER_ACCESS_CODE` (code de la gestion), `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT`.
 
 ## Tests
 
@@ -124,10 +141,10 @@ Variables à définir dans Vercel : `DATABASE_URL` (pooled), `APP_URL` (adresse 
 npm test
 ```
 
-- Tarification (paliers, arrondis, limites)
+- Tarification (paliers, arrondis, limites, codes promo, prix minimum), validité des codes en jours (heure de Paris)
 - Fuseau horaire de Paris (heure d'été, d'hiver, nuit du changement)
 - Machine à états du retour
 - Code e-mail (format, vérification)
 - Nom public des avis (« Sarah M. »)
 - Référence et place saisies à l'accueil (format, majuscules, espaces)
-- Intégration avec la base : vérification e-mail (mauvais code, blocage après 5 essais), surréservation simultanée, enchaînement de séjours, paiement confirmé une seule fois, annulation du bouton, avis (avant/après prise en charge, un seul), dépôt du véhicule (une seule fois, refusé si non payée)
+- Intégration avec la base : vérification e-mail (mauvais code, blocage après 5 essais), surréservation simultanée, enchaînement de séjours, paiement confirmé une seule fois, annulation du bouton, avis (avant/après prise en charge, un seul), dépôt du véhicule (une seule fois, refusé si non payée), recherche des véhicules sur place, client sans réservation (payé sur place, refusé si complet), places (inexistante, déjà occupée, deux agents en même temps, place proposée), codes promo (remise enregistrée, code expiré refusé, dernière utilisation disputée, création avec validité en jours, doublon refusé, désactivation immédiate, code épuisé)

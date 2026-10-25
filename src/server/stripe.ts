@@ -34,7 +34,7 @@ export async function createCheckoutSession(booking: Booking, parking: Parking) 
   return getStripe().checkout.sessions.create({
     mode: "payment",
     locale: "fr",
-    customer_email: booking.email,
+    customer_email: booking.email ?? undefined,
     client_reference_id: booking.id,
     metadata: { bookingId: booking.id, reference: booking.reference },
     // Same length as the spot hold: an abandoned payment frees the spot.
@@ -47,7 +47,13 @@ export async function createCheckoutSession(booking: Booking, parking: Parking) 
           unit_amount: booking.priceCents,
           product_data: {
             name: `Stationnement ${parking.name}`,
-            description: `Réservation ${booking.reference} · ${booking.plate}`,
+            // The detail the customer saw on the form, so the Stripe page matches it.
+            description: [
+              `Réservation ${booking.reference} · ${booking.plate}`,
+              booking.discountCents > 0 && `code promo : -${(booking.discountCents / 100).toFixed(2).replace(".", ",")} €`,
+            ]
+              .filter(Boolean)
+              .join(" · "),
           },
         },
       },

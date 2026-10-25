@@ -10,9 +10,9 @@ import { arrivalPath } from "@/lib/arrival";
 import { cn } from "@/lib/utils";
 import { formatTime, parisDayBounds } from "@/lib/time";
 import { listArrivals } from "@/server/bookings";
-import { hasShuttleAccess } from "@/server/shuttle-access";
+import { hasAccess } from "@/server/team-access";
 
-export default function FrontDeskPage() {
+export default function ArrivalsPage() {
   return (
     <Suspense fallback={<Skeleton className="mx-auto mt-12 h-96 max-w-5xl" />}>
       <FrontDesk />
@@ -22,7 +22,7 @@ export default function FrontDeskPage() {
 
 async function FrontDesk() {
   await connection();
-  if (!(await hasShuttleAccess())) return null;
+  if (!(await hasAccess("accueil"))) return null;
 
   const now = new Date();
   const today = parisDayBounds(now, 0);

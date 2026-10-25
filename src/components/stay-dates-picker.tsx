@@ -61,7 +61,7 @@ function NumberSelect({
 }
 
 /** A time as two lists: hour (00–23) then minutes (00–59). Value is "08:05". */
-function TimeSelect({ id, label, value, onChange }: { id: string; label: string; value: string; onChange: (value: string) => void }) {
+export function TimeSelect({ id, label, value, onChange }: { id: string; label: string; value: string; onChange: (value: string) => void }) {
   const [hour, minute] = value.split(":");
   return (
     <div className="flex items-center gap-1.5">

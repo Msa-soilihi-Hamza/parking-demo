@@ -34,6 +34,6 @@ describe("normalizeSpot", () => {
 
 describe("arrivalPath", () => {
   it("opens the booking in the team space", () => {
-    expect(arrivalPath("ESC-AB12CD")).toBe("/navette/accueil/ESC-AB12CD");
+    expect(arrivalPath("ESC-AB12CD")).toBe("/accueil/reservation/ESC-AB12CD");
   });
 });

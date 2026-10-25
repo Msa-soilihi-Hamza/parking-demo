@@ -2,7 +2,7 @@
 
 import { Loader2Icon, SearchIcon } from "lucide-react";
 import { useActionState } from "react";
-import { findArrivalAction } from "@/app/navette/actions";
+import { findArrivalAction } from "@/app/accueil/actions";
 import { Button } from "@/components/ui/button";
 import { Field, FieldError, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";

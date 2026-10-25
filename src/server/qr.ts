@@ -17,6 +17,14 @@ export function arrivalQrSvg(reference: string): Promise<string> {
   return QRCode.toString(arrivalUrl(reference), { ...options, type: "svg" });
 }
 
+/**
+ * The customer's private link, shown on the desk screen for a customer registered
+ * there: they scan it to get their booking page (and the "J'ai mes bagages" button).
+ */
+export function customerLinkQrSvg(accessToken: string): Promise<string> {
+  return QRCode.toString(`${appUrl()}/reservation/${accessToken}`, { ...options, type: "svg" });
+}
+
 /** PNG for e-mails: Gmail and most clients block inline SVG and data: images. */
 export function arrivalQrPng(reference: string): Promise<Buffer> {
   return QRCode.toBuffer(arrivalUrl(reference), { ...options, type: "png", width: 240 });

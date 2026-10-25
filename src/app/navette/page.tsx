@@ -9,7 +9,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { formatTime, parisDayBounds } from "@/lib/time";
 import { listActivePickups, listPickedUp, listUpcomingReturns } from "@/server/bookings";
 import { vapidPublicKey } from "@/server/push";
-import { hasShuttleAccess } from "@/server/shuttle-access";
+import { hasAccess } from "@/server/team-access";
 
 export default function LivePage() {
   return (
@@ -21,7 +21,7 @@ export default function LivePage() {
 
 async function Live() {
   await connection();
-  if (!(await hasShuttleAccess())) return null;
+  if (!(await hasAccess("navette"))) return null;
 
   const now = new Date();
   const today = parisDayBounds(now, 0);
@@ -62,8 +62,8 @@ async function Live() {
         <div>
           <div className="flex items-baseline justify-between">
             <h2 className="font-medium">Prochains atterrissages</h2>
-            <Link href="/navette/planning" className="text-sm text-muted-foreground hover:text-foreground">
-              Planning <ArrowRightIcon className="inline size-3.5" />
+            <Link href="/navette/journees" className="text-sm text-muted-foreground hover:text-foreground">
+              Journées <ArrowRightIcon className="inline size-3.5" />
             </Link>
           </div>
           {next.length === 0 ? (
@@ -83,8 +83,8 @@ async function Live() {
         <div>
           <div className="flex items-baseline justify-between">
             <h2 className="font-medium">Ramenés aujourd&apos;hui · {pickedUp.length}</h2>
-            <Link href="/navette/historique" className="text-sm text-muted-foreground hover:text-foreground">
-              Historique <ArrowRightIcon className="inline size-3.5" />
+            <Link href="/navette/journees" className="text-sm text-muted-foreground hover:text-foreground">
+              Journées <ArrowRightIcon className="inline size-3.5" />
             </Link>
           </div>
           {pickedUp.length === 0 ? (

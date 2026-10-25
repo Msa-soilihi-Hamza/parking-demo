@@ -9,6 +9,7 @@ import {
   serial,
   text,
   timestamp,
+  uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
 import { PICKUP_STATUSES } from "../lib/pickup";
@@ -23,6 +24,35 @@ export const bookingStatus = pgEnum("booking_status", [
 ]);
 
 export const pickupStatus = pgEnum("pickup_status", PICKUP_STATUSES);
+
+// Online through Stripe, or at the front desk for a customer who comes without booking.
+export const paymentMethod = pgEnum("payment_method", ["online", "on_site"]);
+
+export const promoKind = pgEnum("promo_kind", ["percent", "amount"]);
+
+/** Promo codes typed by customers when booking online, created in the manager's space. */
+export const promoCodes = pgTable(
+  "promo_codes",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    // Stored uppercase: "BIENVENUE10"
+    code: text("code").notNull().unique(),
+    kind: promoKind("kind").notNull(),
+    // 1–100 for a percentage, in cents for an amount
+    value: integer("value").notNull(),
+    validFrom: timestamp("valid_from", { withTimezone: true }),
+    validUntil: timestamp("valid_until", { withTimezone: true }),
+    // Null: unlimited. Counted from the bookings that use the code, not a counter.
+    maxUses: integer("max_uses"),
+    active: boolean("active").notNull().default(true),
+    // What the code is for, e.g. "Vacances de la Toussaint"
+    description: text("description"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    check("promo_value_range", sql`${t.value} > 0 AND (${t.kind} = 'amount' OR ${t.value} <= 100)`),
+  ],
+);
 
 export const parkings = pgTable("parkings", {
   id: serial("id").primaryKey(),
@@ -46,7 +76,8 @@ export const bookings = pgTable(
       .notNull()
       .references(() => parkings.id),
     customerName: text("customer_name").notNull(),
-    email: text("email").notNull(),
+    // Always set online (it is verified); optional for a customer registered at the desk.
+    email: text("email"),
     phone: text("phone").notNull(),
     plate: text("plate").notNull(),
     passengers: integer("passengers").notNull(),
@@ -54,7 +85,10 @@ export const bookings = pgTable(
     // Planned landing time of the return flight
     returnAt: timestamp("return_at", { withTimezone: true }).notNull(),
     returnTerminal: text("return_terminal"),
+    // What the customer pays; the promo discount is kept for the receipt and the e-mails.
     priceCents: integer("price_cents").notNull(),
+    discountCents: integer("discount_cents").notNull().default(0),
+    promoCodeId: uuid("promo_code_id").references(() => promoCodes.id),
     status: bookingStatus("status").notNull(),
     // One-time code sent by e-mail (only its hash is stored)
     emailCodeHash: text("email_code_hash"),
@@ -71,6 +105,7 @@ export const bookings = pgTable(
     bagsReadyAt: timestamp("bags_ready_at", { withTimezone: true }),
     enRouteAt: timestamp("en_route_at", { withTimezone: true }),
     pickedUpAt: timestamp("picked_up_at", { withTimezone: true }),
+    paymentMethod: paymentMethod("payment_method").notNull().default("online"),
     stripeSessionId: text("stripe_session_id").unique(),
     paidAt: timestamp("paid_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
@@ -79,6 +114,10 @@ export const bookings = pgTable(
     index("bookings_parking_period_idx").on(t.parkingId, t.dropoffAt, t.returnAt),
     index("bookings_return_idx").on(t.returnAt),
     index("bookings_dropoff_idx").on(t.dropoffAt),
+    // One car per spot: among the cars on site, a spot can only appear once per parking.
+    uniqueIndex("bookings_spot_on_site_idx")
+      .on(t.parkingId, t.parkingSpot)
+      .where(sql`status = 'confirmed' AND parked_at IS NOT NULL AND pickup_status <> 'picked_up'`),
   ],
 );
 
@@ -116,5 +155,6 @@ export const pushSubscriptions = pgTable("push_subscriptions", {
 });
 
 export type Parking = typeof parkings.$inferSelect;
+export type PromoCode = typeof promoCodes.$inferSelect;
 export type Booking = typeof bookings.$inferSelect;
 export type Review = typeof reviews.$inferSelect;

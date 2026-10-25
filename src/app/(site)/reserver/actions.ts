@@ -7,10 +7,49 @@ import {
   attachStripeSession,
   createUnverifiedBooking,
   getHeldBooking,
+  listParkings,
+  priceStay,
   resendCode,
   verifyEmailAndHold,
 } from "@/server/bookings";
 import { createCheckoutSession, getStripe } from "@/server/stripe";
+
+export type QuoteInput = { parking: string; dropoffAt: string; returnAt: string; promoCode?: string };
+
+export type QuoteResult =
+  | {
+      ok: true;
+      days: number;
+      lines: { label: string; days: number; unitCents: number; totalCents: number }[];
+      baseCents: number;
+      discountCents: number;
+      totalCents: number;
+      promo: { code: string; label: string } | null;
+      promoError: string | null;
+    }
+  | { ok: false; error: string };
+
+/** The live price on the booking form, computed by the server (the promo code is checked there). */
+export async function quoteStayAction(input: QuoteInput): Promise<QuoteResult> {
+  const dropoffAt = parisLocalToDate(String(input.dropoffAt ?? ""));
+  const returnAt = parisLocalToDate(String(input.returnAt ?? ""));
+  if (!dropoffAt || !returnAt) return { ok: false, error: "Choisissez vos dates." };
+  const parking = (await listParkings()).find((p) => p.slug === input.parking);
+  if (!parking) return { ok: false, error: "Parking inconnu." };
+
+  const price = await priceStay({ parking, dropoffAt, returnAt, promoCode: input.promoCode?.slice(0, 40) });
+  if (!price.ok) return price;
+  return {
+    ok: true,
+    days: price.days,
+    lines: price.lines,
+    baseCents: price.baseCents,
+    discountCents: price.discountCents,
+    totalCents: price.totalCents,
+    promo: price.promo && { code: price.promo.code, label: price.promo.label },
+    promoError: price.promoError,
+  };
+}
 
 export type DetailsState = {
   error?: string;
@@ -49,6 +88,10 @@ const detailsSchema = z.object({
     .min(4, "Plaque invalide.")
     .transform((v) => v.toUpperCase()),
   passengers: z.coerce.number().int().min(1).max(8),
+  promoCode: z
+    .string()
+    .optional()
+    .transform((v) => v?.trim() || null),
 });
 
 function formValues(formData: FormData) {
@@ -79,7 +122,7 @@ export async function submitDetailsAction(
   try {
     const result = await createUnverifiedBooking({ ...data, parkingSlug: data.parking });
     if (!result.ok) return { error: result.error, values };
-    return { values, pending: { bookingId: result.booking.id, email: result.booking.email } };
+    return { values, pending: { bookingId: result.booking.id, email: data.email } };
   } catch (error) {
     console.error(error);
     return { error: "Impossible d'envoyer le code de vérification. Réessayez.", values };

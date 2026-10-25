@@ -17,5 +17,5 @@ export function normalizeSpot(input: string): string | null {
 
 /** Where the QR code leads: the booking's page in the team space (login required). */
 export function arrivalPath(reference: string): string {
-  return `/navette/accueil/${encodeURIComponent(reference)}`;
+  return `/accueil/reservation/${encodeURIComponent(reference)}`;
 }

@@ -2,13 +2,16 @@
 import { eq, inArray, sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { db } from "@/db";
-import { bookings, parkings, reviews } from "@/db/schema";
+import { bookings, parkings, promoCodes, reviews, type Parking } from "@/db/schema";
 import {
   advancePickup,
   cancelPickupRequest,
   checkInVehicle,
   confirmPayment,
   createUnverifiedBooking,
+  createWalkInBooking,
+  listVehiclesOnSite,
+  suggestSpot,
   verifyEmailAndHold,
   type NewBookingInput,
 } from "./bookings";
@@ -19,14 +22,18 @@ import { submitReview } from "./reviews";
 vi.mock("./mailer", () => ({
   sendVerificationCode: vi.fn(),
   sendBookingConfirmation: vi.fn(),
+  sendWalkInConfirmation: vi.fn(),
 }));
 
 const slug = `test-${Date.now()}`;
+// A second parking with real rows of spots (A1–B20), for the front desk.
+const deskSlug = `${slug}-desk`;
 const CODE = "123456";
 let parkingId: number;
+let deskParking: Parking;
 
-const stay = (dropoff: string, ret: string, name: string): NewBookingInput => ({
-  parkingSlug: slug,
+const stay = (dropoff: string, ret: string, name: string, parkingSlug = slug): NewBookingInput => ({
+  parkingSlug,
   dropoffAt: new Date(dropoff),
   returnAt: new Date(ret),
   returnTerminal: null,
@@ -62,14 +69,24 @@ beforeAll(async () => {
     })
     .returning();
   parkingId = parking.id;
+  [deskParking] = await db
+    .insert(parkings)
+    .values({ slug: deskSlug, name: "Accueil de test", airport: "Test", address: "Test", capacity: 40, dailyRateCents: 1000, terminals: ["T1"] })
+    .returning();
   // Open the pool's connections up front so the race below really runs in parallel.
   await Promise.all(Array.from({ length: 10 }, () => db.execute(sql`SELECT pg_sleep(0.05)`)));
 });
 
+// Test promo codes: letters and digits only, unique per run.
+const runTag = String(Date.now()).slice(-8);
+const promoCode = (name: string) => `${name}${runTag}`;
+
 afterAll(async () => {
-  const rows = await db.select({ id: bookings.id }).from(bookings).where(eq(bookings.parkingId, parkingId));
+  const ids = [parkingId, deskParking.id];
+  const rows = await db.select({ id: bookings.id }).from(bookings).where(inArray(bookings.parkingId, ids));
   if (rows.length) await db.delete(bookings).where(inArray(bookings.id, rows.map((r) => r.id)));
-  await db.delete(parkings).where(eq(parkings.id, parkingId));
+  await db.delete(parkings).where(inArray(parkings.id, ids));
+  await db.delete(promoCodes).where(inArray(promoCodes.code, ["DIX", "VIEUX", "UNIQUE"].map(promoCode)));
 });
 
 describe("e-mail verification", () => {
@@ -154,11 +171,16 @@ describe("front desk check-in", () => {
     return row;
   }
 
-  it("records the time and the spot once, then refuses a second scan", async () => {
-    const id = await requestWithKnownCode(stay("2027-09-01T08:00Z", "2027-09-02T08:00Z", "Arrivée"));
+  /** A paid booking at the desk parking, not checked in yet. */
+  async function paidAtDesk(from: string, to: string, name: string) {
+    const id = await requestWithKnownCode(stay(from, to, name, deskSlug));
     await verifyEmailAndHold(id, CODE);
     await confirmPayment(id);
-    const { reference } = await bookingRow(id);
+    return bookingRow(id);
+  }
+
+  it("records the time and the spot once, then refuses a second scan", async () => {
+    const { id, reference } = await paidAtDesk("2027-09-01T08:00Z", "2027-09-02T08:00Z", "Arrivée");
 
     const first = await checkInVehicle(reference, "B12");
     expect(first.ok).toBe(true);
@@ -172,7 +194,7 @@ describe("front desk check-in", () => {
   });
 
   it("refuses a car whose booking is not paid", async () => {
-    const id = await requestWithKnownCode(stay("2027-09-10T08:00Z", "2027-09-11T08:00Z", "Impayé"));
+    const id = await requestWithKnownCode(stay("2027-09-10T08:00Z", "2027-09-11T08:00Z", "Impayé", deskSlug));
     await verifyEmailAndHold(id, CODE);
     const { reference } = await bookingRow(id);
 
@@ -183,6 +205,133 @@ describe("front desk check-in", () => {
   it("says when the reference does not exist", async () => {
     expect(await checkInVehicle("ESC-NOPE00", "A1")).toEqual({ ok: false, error: "Réservation introuvable." });
   });
+
+  it("finds a parked car by plate, name or spot, until its owner is back", async () => {
+    const name = `Véhicule ${slug}`;
+    const { id, reference, accessToken } = await paidAtDesk("2027-09-20T08:00Z", "2027-09-21T08:00Z", name);
+    await checkInVehicle(reference, "A7");
+
+    const ids = async (search: string) => (await listVehiclesOnSite(search, 500)).rows.map((r) => r.id);
+    expect(await ids("te 123 st")).toContain(id); // plate typed without dashes
+    expect(await ids(name.toLowerCase())).toContain(id);
+    expect(await ids("A7")).toContain(id);
+    expect(await ids("100%")).not.toContain(id); // % is searched literally, not as a wildcard
+
+    await advancePickup({ accessToken }, "scheduled", "bags_ready");
+    await advancePickup({ id }, "bags_ready", "en_route");
+    await advancePickup({ id }, "en_route", "picked_up");
+    expect(await ids(name)).not.toContain(id);
+  });
+
+  it("refuses a spot that another car still occupies", async () => {
+    // B12 is still taken by the car of the first test.
+    const { reference } = await paidAtDesk("2027-10-01T08:00Z", "2027-10-02T08:00Z", "Même Place");
+    const result = await checkInVehicle(reference, "B12");
+    expect(result.ok).toBe(false);
+    expect(!result.ok && result.error).toMatch(/^La place B12 est déjà occupée \(ESC-/);
+  });
+
+  it("refuses a spot that does not exist in this parking", async () => {
+    const { reference } = await paidAtDesk("2027-10-05T08:00Z", "2027-10-06T08:00Z", "Place Inconnue");
+    expect(await checkInVehicle(reference, "C5")).toEqual({
+      ok: false,
+      error: "La place C5 n'existe pas dans ce parking (places A1 à B20).",
+    });
+  });
+
+  it("gives a spot to only one of two cars checked in at the same instant", async () => {
+    const [a, b] = await Promise.all([
+      paidAtDesk("2027-10-10T08:00Z", "2027-10-11T08:00Z", "Course A"),
+      paidAtDesk("2027-10-10T08:00Z", "2027-10-11T08:00Z", "Course B"),
+    ]);
+    const results = await Promise.all([checkInVehicle(a.reference, "B20"), checkInVehicle(b.reference, "B20")]);
+    expect(results.filter((r) => r.ok)).toHaveLength(1);
+  });
+
+  it("suggests the first free spot of the plan", async () => {
+    const { reference } = await paidAtDesk("2027-10-15T08:00Z", "2027-10-16T08:00Z", "Première Place");
+    expect(await suggestSpot(deskParking)).toBe("A1");
+    await checkInVehicle(reference, "A1");
+    expect(await suggestSpot(deskParking)).toBe("A2");
+  });
+});
+
+describe("customer registered at the desk", () => {
+  const walkIn = (name: string) => ({
+    parkingSlug: slug,
+    returnAt: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000),
+    returnTerminal: null,
+    customerName: name,
+    email: null,
+    phone: "0600000000",
+    plate: "WA-123-LK",
+    passengers: 2,
+    spot: "A1",
+  });
+
+  it("creates a paid booking with the car already parked, and no e-mail needed", async () => {
+    const result = await createWalkInBooking(walkIn("Sur Place"));
+    if (!result.ok) throw new Error(result.error);
+    const { booking } = result;
+    expect(booking).toMatchObject({
+      status: "confirmed",
+      paymentMethod: "on_site",
+      parkingSpot: "A1",
+      email: null,
+    });
+    expect(booking.parkedAt).toBeInstanceOf(Date);
+    expect(booking.priceCents).toBe(3000); // 3 days at 10 €, no discount below day 4
+  });
+
+  it("refuses a second car when the parking is full, like online", async () => {
+    // The test parking has one spot, taken by the previous walk-in.
+    const result = await createWalkInBooking(walkIn("Trop Tard"));
+    expect(result).toEqual({ ok: false, error: "Ce parking est complet sur une partie de la période." });
+  });
+
+  it("rejects a terminal that does not belong to the parking", async () => {
+    const result = await createWalkInBooking({ ...walkIn("Mauvais Terminal"), returnTerminal: "T9" });
+    expect(result).toEqual({ ok: false, error: "Terminal inconnu pour cet aéroport." });
+  });
+});
+
+describe("promo codes", () => {
+  beforeAll(async () => {
+    await db.insert(promoCodes).values([
+      { code: promoCode("DIX"), kind: "percent", value: 10 },
+      { code: promoCode("VIEUX"), kind: "amount", value: 500, validUntil: new Date("2020-01-01") },
+      { code: promoCode("UNIQUE"), kind: "percent", value: 50, maxUses: 1 },
+    ]);
+  });
+
+  const desk = (from: string, to: string, name: string, code?: string) => ({
+    ...stay(from, to, name, deskSlug),
+    promoCode: code,
+  });
+
+  it("stores the discount of a valid code with the booking", async () => {
+    // 3 days at 10 €: 30 €, minus 10 %.
+    const created = await createUnverifiedBooking(desk("2028-01-01T08:00Z", "2028-01-04T08:00Z", "Promo", promoCode("DIX")));
+    if (!created.ok) throw new Error(created.error);
+    expect(created.booking).toMatchObject({ priceCents: 2700, discountCents: 300 });
+  });
+
+  it("refuses an expired code instead of charging the full price silently", async () => {
+    const created = await createUnverifiedBooking(desk("2028-01-10T08:00Z", "2028-01-11T08:00Z", "Expiré", promoCode("VIEUX")));
+    expect(created).toEqual({ ok: false, error: "Ce code promo a expiré." });
+  });
+
+  it("gives the last use of a limited code to only one of two customers", async () => {
+    const [a, b] = await Promise.all([
+      requestWithKnownCode(desk("2028-02-01T08:00Z", "2028-02-02T08:00Z", "Unique A", promoCode("UNIQUE"))),
+      requestWithKnownCode(desk("2028-02-01T08:00Z", "2028-02-02T08:00Z", "Unique B", promoCode("UNIQUE"))),
+    ]);
+    const results = await Promise.all([verifyEmailAndHold(a, CODE), verifyEmailAndHold(b, CODE)]);
+    expect(results.filter((r) => r.ok)).toHaveLength(1);
+    const refused = results.find((r) => !r.ok);
+    expect(refused && !refused.ok && refused.error).toMatch(/nombre d'utilisations/);
+  });
+
 });
 
 describe("reviews", () => {

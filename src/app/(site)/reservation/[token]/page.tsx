@@ -244,7 +244,10 @@ async function Reservation({
             {booking.parkingSpot && <Item label="Place" value={booking.parkingSpot} mono />}
             <Item label="Atterrissage retour" value={formatDateTime(booking.returnAt)} />
             <Item label="Passagers" value={String(booking.passengers)} />
-            <Item label="Montant" value={formatEuros(booking.priceCents)} />
+            <Item
+              label="Montant"
+              value={`${formatEuros(booking.priceCents)}${booking.discountCents > 0 ? ` · code promo -${formatEuros(booking.discountCents)}` : ""}`}
+            />
           </dl>
         </CardContent>
       </Card>

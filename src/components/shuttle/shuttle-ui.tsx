@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { advancePickupAction } from "@/app/navette/actions";
+import { StripScroller } from "@/components/shuttle/strip-scroller";
 import { Button } from "@/components/ui/button";
 import { PICKUP_LABELS, PICKUP_STATUSES, type PickupStatus } from "@/lib/pickup";
 import { formatTime, parisDay, parisHour } from "@/lib/time";
@@ -210,13 +211,18 @@ export function DaySchedule({ rows }: { rows: ShuttleRow[] }) {
               {String(hour).padStart(2, "0")}h · {hourRows.length}
             </h3>
             <Rows
-              items={hourRows.map((r) => ({
-                id: r.id,
-                time: formatTime(r.returnAt),
-                name: r.customerName,
-                detail: `${r.returnTerminal ?? "terminal ?"} · ${r.passengers} pers.`,
-                status: r.pickupStatus,
-              }))}
+              items={hourRows.map((r) => {
+                // Once the customer is back: what they waited, and their rating.
+                const wait = waitMinutes(r);
+                return {
+                  id: r.id,
+                  time: formatTime(r.returnAt),
+                  name: r.customerName,
+                  detail: `${r.returnTerminal ?? "terminal ?"} · ${r.passengers} pers.${wait === null ? "" : ` · ${wait} min d'attente`}`,
+                  status: r.pickupStatus,
+                  rating: r.rating,
+                };
+              })}
             />
           </section>
         ))}
@@ -236,7 +242,7 @@ export function DayStrip({
 }) {
   const weekday = new Intl.DateTimeFormat("fr-FR", { weekday: "short", timeZone: "UTC" });
   return (
-    <div className="-mx-4 flex snap-x gap-2 overflow-x-auto px-4 pb-2 [scrollbar-width:none] sm:mx-0 sm:px-0 [&::-webkit-scrollbar]:hidden">
+    <StripScroller selected={selected} className="-mx-4 flex snap-x gap-2 overflow-x-auto px-4 pb-2 [scrollbar-width:none] sm:mx-0 sm:px-0 [&::-webkit-scrollbar]:hidden">
       {days.map(({ day, count }) => {
         const date = new Date(`${day}T12:00:00Z`);
         const active = day === selected;
@@ -245,6 +251,7 @@ export function DayStrip({
             key={day}
             href={hrefFor(day)}
             scroll={false}
+            aria-current={active ? "date" : undefined}
             className={cn(
               "flex w-14 shrink-0 snap-start flex-col items-center rounded-2xl border py-2.5 transition",
               active ? "border-foreground bg-foreground text-background" : "hover:border-foreground/40",
@@ -263,7 +270,7 @@ export function DayStrip({
           </Link>
         );
       })}
-    </div>
+    </StripScroller>
   );
 }
 

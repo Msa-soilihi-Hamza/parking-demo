@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX "bookings_spot_on_site_idx" ON "bookings" USING btree ("parking_id","parking_spot") WHERE status = 'confirmed' AND parked_at IS NOT NULL AND pickup_status <> 'picked_up';

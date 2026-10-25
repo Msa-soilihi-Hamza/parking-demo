@@ -3,10 +3,11 @@
 // through the site, with their e-mailed links, are never touched.
 import { like, sql } from "drizzle-orm";
 import { quote } from "../lib/pricing";
+import { allSpots } from "../lib/spots";
 import type { PickupStatus } from "../lib/pickup";
 import { parisDayBounds } from "../lib/time";
 import { db } from "./index";
-import { bookings, parkings, reviews } from "./schema";
+import { bookings, parkings, promoCodes, reviews } from "./schema";
 
 /** The customer link used in the demo: /reservation/demo-retour */
 export const DEMO_TOKEN = "demo-retour";
@@ -36,9 +37,23 @@ function plate() {
   return `${l()}${l()}-${n}-${l()}${l()}`;
 }
 
-/** "C14": a row letter and a number, as painted on the ground. */
-function spot() {
-  return `${"ABCDEFGH"[Math.floor(rand() * 8)]}${1 + Math.floor(rand() * 40)}`;
+// Spots come from each parking's plan. A car still on site takes a spot of its own
+// (the database refuses two cars on one spot); a car already gone keeps any spot.
+const freeSpots = new Map<number, string[]>();
+/** Spots held by real cars on site (bookings made on the site or at the desk): never reused. */
+const realTaken = new Set<string>();
+function spotFor(parking: { id: number; capacity: number }, stillOnSite: boolean): string | null {
+  const spots = allSpots(parking.capacity);
+  if (!stillOnSite) return pick(spots);
+  if (!freeSpots.has(parking.id)) {
+    const shuffled = spots.filter((spot) => !realTaken.has(`${parking.id}:${spot}`));
+    for (let i = shuffled.length - 1; i > 0; i--) {
+      const j = Math.floor(rand() * (i + 1));
+      [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+    }
+    freeSpots.set(parking.id, shuffled);
+  }
+  return freeSpots.get(parking.id)!.pop() ?? null;
 }
 
 let counter = 0;
@@ -94,11 +109,19 @@ async function main() {
     }),
   );
 
+  const real = await db.execute<{ parking_id: number; parking_spot: string }>(sql`
+    SELECT parking_id, parking_spot FROM bookings
+    WHERE reference NOT LIKE 'ESC-DEMO%' AND status = 'confirmed' AND parked_at IS NOT NULL
+      AND pickup_status <> 'picked_up' AND parking_spot IS NOT NULL
+  `);
+  for (const r of real.rows) realTaken.add(`${r.parking_id}:${r.parking_spot}`);
+
   type Row = typeof bookings.$inferInsert;
   const rows: Row[] = [];
 
   function makeBooking(returnAt: number, pickup: PickupStatus, overrides: Partial<Row> = {}) {
-    const parking = overrides.parkingId === orly.id ? orly : rand() < 0.45 ? orly : cdg;
+    const parking =
+      overrides.parkingId === orly.id ? orly : overrides.parkingId === cdg.id ? cdg : rand() < 0.45 ? orly : cdg;
     const stayDays = 2 + Math.floor(rand() * 12);
     const defaultDropoff = new Date(roundTo5(returnAt - stayDays * DAY - rand() * 8 * HOUR));
     const dropoffAt = overrides.dropoffAt instanceof Date ? overrides.dropoffAt : defaultDropoff;
@@ -119,6 +142,8 @@ async function main() {
       pickup === "picked_up" ? new Date(enRouteAt!.getTime() + (8 + rand() * 10) * MIN) : null;
     // Cars already dropped off were checked in at the front desk a few minutes after arrival.
     const parked = dropoffAt.getTime() < now;
+    // About one customer in ten came to the desk without booking and paid there.
+    const walkIn = parked && rand() < 0.1;
 
     rows.push({
       reference: reference(),
@@ -136,10 +161,11 @@ async function main() {
       status: "confirmed",
       pickupStatus: pickup,
       parkedAt: parked ? new Date(dropoffAt.getTime() + (2 + rand() * 8) * MIN) : null,
-      parkingSpot: parked ? spot() : null,
+      parkingSpot: parked ? spotFor(parking, pickup !== "picked_up") : null,
       bagsReadyAt,
       enRouteAt,
       pickedUpAt,
+      paymentMethod: walkIn ? "on_site" : "online",
       paidAt: dropoffAt,
       createdAt: new Date(dropoffAt.getTime() - 10 * DAY),
       ...overrides,
@@ -210,6 +236,20 @@ async function main() {
     paidAt: new Date(now - 3 * DAY),
     createdAt: new Date(now - 3 * DAY),
   });
+
+  // Promo codes to try on the booking form. Updated in place: bookings may use them.
+  const promoValues = [
+    { code: "BIENVENUE10", kind: "percent" as const, value: 10, validFrom: null, validUntil: null, maxUses: null, description: "Première réservation" },
+    { code: "TOUSSAINT5", kind: "amount" as const, value: 500, validFrom: null, validUntil: new Date(now + 10 * DAY), maxUses: null, description: "Vacances de la Toussaint" },
+    { code: "FLASH50", kind: "percent" as const, value: 50, validFrom: null, validUntil: null, maxUses: 3, description: "Vente flash : 3 réservations seulement" },
+    { code: "ETE2026", kind: "percent" as const, value: 15, validFrom: null, validUntil: new Date("2026-09-30T21:59:00Z"), maxUses: null, description: "Été 2026 (expiré)" },
+  ];
+  for (const promo of promoValues) {
+    await db
+      .insert(promoCodes)
+      .values({ ...promo, active: true })
+      .onConflictDoUpdate({ target: promoCodes.code, set: { ...promo, active: true } });
+  }
 
   const inserted = await db
     .insert(bookings)

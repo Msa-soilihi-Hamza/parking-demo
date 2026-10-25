@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowLeftIcon, Loader2Icon, MailCheckIcon } from "lucide-react";
+import { ArrowLeftIcon, Loader2Icon, MailCheckIcon, TicketPercentIcon, XIcon } from "lucide-react";
 import { useActionState, useMemo, useState, useTransition } from "react";
 import {
   resendCodeAction,
@@ -14,12 +14,14 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Field, FieldError, FieldGroup, FieldLabel, FieldSet, FieldLegend } from "@/components/ui/field";
+import { PriceDetails } from "@/components/price-details";
 import { SelectField } from "@/components/select-field";
 import { StayDatesPicker, type StayDates } from "@/components/stay-dates-picker";
 import { Input } from "@/components/ui/input";
 import { InputOTP, InputOTPGroup, InputOTPSlot } from "@/components/ui/input-otp";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Separator } from "@/components/ui/separator";
+import { useStayQuote } from "@/components/use-stay-quote";
 import { formatEuros, quote } from "@/lib/pricing";
 import { parisLocalToDate } from "@/lib/time";
 
@@ -62,6 +64,8 @@ export function BookingFlow({ parkings, defaultParking, defaultDropoff, defaultR
   const [terminal, setTerminal] = useState(UNKNOWN_TERMINAL);
   const [passengers, setPassengers] = useState("2");
   const [editing, setEditing] = useState(false);
+  const [promoInput, setPromoInput] = useState(details.values?.promoCode ?? "");
+  const [appliedPromo, setAppliedPromo] = useState(details.values?.promoCode ?? "");
 
   const parking = parkings.find((p) => p.slug === slug);
   const dropoff = `${dates.from}T${dates.dropoffTime}`;
@@ -74,6 +78,13 @@ export function BookingFlow({ parkings, defaultParking, defaultDropoff, defaultR
     if (!parking || !from || !to) return null;
     return quote(parking.dailyRateCents, from, to);
   }, [parking, dropoff, ret]);
+
+  // The price as charged comes from the server: it depends on how full the parking is.
+  const server = useStayQuote(
+    price?.ok ? { parking: slug, dropoffAt: dropoff, returnAt: ret, promoCode: appliedPromo || undefined } : null,
+  );
+  const charged = server.quote?.ok ? server.quote : null;
+  const promoError = charged?.promoError ?? null;
 
   const verifying = details.pending && !editing;
   // React resets the form after each submit: refill what the customer typed.
@@ -199,8 +210,10 @@ export function BookingFlow({ parkings, defaultParking, defaultDropoff, defaultR
       <Card className="lg:sticky lg:top-20">
         <CardHeader>
           <CardDescription>Total</CardDescription>
-          <CardTitle className="text-3xl font-semibold tracking-tight">
-            {price?.ok ? formatEuros(price.totalCents) : "—"}
+          <CardTitle
+            className={`text-3xl font-semibold tracking-tight tabular-nums transition-opacity ${server.loading ? "opacity-40" : ""}`}
+          >
+            {charged ? formatEuros(charged.totalCents) : price?.ok ? formatEuros(price.totalCents) : "—"}
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4 text-sm">
@@ -209,26 +222,76 @@ export function BookingFlow({ parkings, defaultParking, defaultDropoff, defaultR
               <p className="text-muted-foreground">
                 {price.days} jour{price.days > 1 ? "s" : ""} · navette aller-retour incluse
               </p>
-              <ul className="space-y-1.5">
-                {price.lines.map((line) => (
-                  <li key={line.label} className="flex justify-between gap-3">
-                    <span className="text-muted-foreground">
-                      {line.days} × {formatEuros(line.unitCents)}
-                      {line.unitCents < (parking?.dailyRateCents ?? 0) && (
-                        <span> (-{Math.round((1 - line.unitCents / parking!.dailyRateCents) * 100)} %)</span>
-                      )}
-                    </span>
-                    <span>{formatEuros(line.totalCents)}</span>
-                  </li>
-                ))}
-              </ul>
+              {charged && parking && <PriceDetails quote={charged} dailyRateCents={parking.dailyRateCents} />}
+              {server.quote && !server.quote.ok && <p className="text-destructive">{server.quote.error}</p>}
             </>
           ) : (
             <p className="text-destructive">{price && !price.ok ? price.error : "Choisissez la date de retour."}</p>
           )}
+
           {!verifying && (
-            <Button type="submit" form="booking-form" size="lg" className="w-full" disabled={submitting || !price?.ok}>
-              {submitting && <Loader2Icon className="animate-spin" />}
+            <div className="space-y-1.5">
+              {appliedPromo && !promoError ? (
+                <p className="flex items-center justify-between gap-2 rounded-lg bg-emerald-50 px-3 py-2 text-emerald-800">
+                  <span className="inline-flex items-center gap-1.5">
+                    <TicketPercentIcon className="size-4" /> Code {appliedPromo} appliqué
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAppliedPromo("");
+                      setPromoInput("");
+                    }}
+                    className="text-emerald-800/70 hover:text-emerald-900"
+                    aria-label="Retirer le code promo"
+                  >
+                    <XIcon className="size-4" />
+                  </button>
+                </p>
+              ) : (
+                <div className="flex gap-2">
+                  <Input
+                    aria-label="Code promo"
+                    placeholder="Code promo"
+                    value={promoInput}
+                    onChange={(e) => setPromoInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      // Enter applies the code instead of submitting the booking.
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        setAppliedPromo(promoInput.trim().toUpperCase());
+                      }
+                    }}
+                    autoCapitalize="characters"
+                    autoComplete="off"
+                    spellCheck={false}
+                    className="uppercase placeholder:normal-case"
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    disabled={!promoInput.trim()}
+                    onClick={() => setAppliedPromo(promoInput.trim().toUpperCase())}
+                  >
+                    Appliquer
+                  </Button>
+                </div>
+              )}
+              {promoError && <p className="text-destructive">{promoError}</p>}
+            </div>
+          )}
+          {/* Only a code the server accepted goes with the booking. */}
+          <input type="hidden" name="promoCode" form="booking-form" value={charged?.promo ? appliedPromo : ""} />
+
+          {!verifying && (
+            <Button
+              type="submit"
+              form="booking-form"
+              size="lg"
+              className="w-full"
+              disabled={submitting || !charged || server.loading}
+            >
+              {(submitting || server.loading) && <Loader2Icon className="animate-spin" />}
               Continuer
             </Button>
           )}

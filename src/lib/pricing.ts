@@ -66,6 +66,24 @@ export function quote(dailyRateCents: number, dropoffAt: Date, returnAt: Date): 
   };
 }
 
+/** Stripe refuses tiny amounts, and a stay is never free: a promo code stops here. */
+export const MIN_TOTAL_CENTS = 100;
+
+export type PriceBreakdown = {
+  baseCents: number;
+  discountCents: number;
+  totalCents: number;
+};
+
+/**
+ * Stable prices: the degressive days, minus a promo code (computed by the caller).
+ * One function for the form, the server and the desk: the price shown is the price paid.
+ */
+export function finalPrice(baseCents: number, discountFor: (amountCents: number) => number = () => 0): PriceBreakdown {
+  const discountCents = Math.max(0, Math.min(discountFor(baseCents), baseCents - MIN_TOTAL_CENTS));
+  return { baseCents, discountCents, totalCents: baseCents - discountCents };
+}
+
 export function formatEuros(cents: number): string {
   return new Intl.NumberFormat("fr-FR", { style: "currency", currency: "EUR" }).format(
     cents / 100,
