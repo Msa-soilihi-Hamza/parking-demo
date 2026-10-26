@@ -1,3 +1,4 @@
+import { UserRoundIcon } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { SUPPORT_PHONE, SUPPORT_PHONE_HREF } from "@/lib/contact";
@@ -22,6 +23,11 @@ export default function SiteLayout({ children }: LayoutProps<"/">) {
             <Button variant="ghost" size="sm" className="hidden sm:inline-flex" render={<Link href="/gestion" />} nativeButton={false}>
               Gestion
             </Button>
+            {/* The page itself checks the session (sign-in page when signed out). */}
+            <Button variant="ghost" size="sm" render={<Link href="/compte" />} nativeButton={false}>
+              <UserRoundIcon /> <span className="hidden sm:inline">Mon espace</span>
+              <span className="sr-only sm:hidden">Mon espace</span>
+            </Button>
             <Button size="sm" render={<Link href="/reserver" />} nativeButton={false}>
               Réserver
             </Button>
@@ -37,7 +43,16 @@ export default function SiteLayout({ children }: LayoutProps<"/">) {
               {SUPPORT_PHONE}
             </a>
           </span>
-          <span>Projet de démonstration · marque fictive · Stripe en mode test</span>
+          <span>
+            Projet de démonstration · marque fictive · Stripe en mode test ·{" "}
+            <Link href="/confidentialite" className="hover:text-foreground hover:underline">
+              Confidentialité
+            </Link>{" "}
+            ·{" "}
+            <Link href="/conditions" className="hover:text-foreground hover:underline">
+              Conditions
+            </Link>
+          </span>
         </div>
       </footer>
     </>

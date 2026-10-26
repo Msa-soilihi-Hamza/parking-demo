@@ -1,9 +1,11 @@
+import { headers } from "next/headers";
 import { connection } from "next/server";
 import { Suspense } from "react";
 import { BookingFlow } from "@/components/booking-flow";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Skeleton } from "@/components/ui/skeleton";
 import { dateToParisLocal, parisDay, parisDayBounds, parisLocalToDate } from "@/lib/time";
+import { auth, googleEnabled } from "@/server/auth";
 import { listParkings } from "@/server/bookings";
 
 export const metadata = { title: "Réserver · Escale Parking" };
@@ -12,7 +14,10 @@ export default function BookPage(props: PageProps<"/reserver">) {
   return (
     <div className="mx-auto max-w-5xl px-4 py-12 sm:px-6">
       <h1 className="text-3xl font-semibold tracking-tight">Réserver une place</h1>
-      <p className="mt-2 text-muted-foreground">Le prix s&apos;affiche dès que vous choisissez vos dates.</p>
+      <p className="mt-2 text-muted-foreground">
+        Le prix s&apos;affiche dès que vous choisissez vos dates. Pour réserver, un compte suffit : Google ou un code
+        reçu par e-mail.
+      </p>
       <div className="mt-10">
         <Suspense fallback={<Skeleton className="h-[640px] w-full" />}>
           <Booking searchParams={props.searchParams} />
@@ -24,7 +29,11 @@ export default function BookPage(props: PageProps<"/reserver">) {
 
 async function Booking({ searchParams }: Pick<PageProps<"/reserver">, "searchParams">) {
   await connection();
-  const [params, parkings] = await Promise.all([searchParams, listParkings()]);
+  const [params, parkings, session] = await Promise.all([
+    searchParams,
+    listParkings(),
+    auth.api.getSession({ headers: await headers() }),
+  ]);
   const { paiement } = params;
 
   // Default stay: tomorrow 08:00 → one week later 08:00 (Paris time),
@@ -57,6 +66,9 @@ async function Booking({ searchParams }: Pick<PageProps<"/reserver">, "searchPar
         defaultDropoff={fromQuery(params.dropoffAt) ?? at8(tomorrow)}
         defaultReturn={fromQuery(params.returnAt) ?? at8(nextWeek)}
         minDay={parisDay(new Date())}
+        defaultPromo={typeof params.promo === "string" ? params.promo.slice(0, 20) : ""}
+        customer={session ? { name: session.user.name, email: session.user.email } : null}
+        googleEnabled={googleEnabled}
       />
     </div>
   );

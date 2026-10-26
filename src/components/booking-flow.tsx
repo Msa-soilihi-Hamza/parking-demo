@@ -1,27 +1,22 @@
 "use client";
 
-import { ArrowLeftIcon, Loader2Icon, MailCheckIcon, TicketPercentIcon, XIcon } from "lucide-react";
-import { useActionState, useMemo, useState, useTransition } from "react";
-import {
-  resendCodeAction,
-  retryPaymentAction,
-  submitDetailsAction,
-  verifyCodeAction,
-  type CodeState,
-  type DetailsState,
-} from "@/app/(site)/reserver/actions";
+import { Loader2Icon, LogOutIcon, TicketPercentIcon, UserRoundIcon, XIcon } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { useActionState, useEffect, useMemo, useRef, useState } from "react";
+import { retryPaymentAction, submitDetailsAction, type DetailsState } from "@/app/(site)/reserver/actions";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Field, FieldError, FieldGroup, FieldLabel, FieldSet, FieldLegend } from "@/components/ui/field";
 import { PriceDetails } from "@/components/price-details";
+import { SignInPanel } from "@/components/sign-in-panel";
 import { SelectField } from "@/components/select-field";
 import { StayDatesPicker, type StayDates } from "@/components/stay-dates-picker";
 import { Input } from "@/components/ui/input";
-import { InputOTP, InputOTPGroup, InputOTPSlot } from "@/components/ui/input-otp";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Separator } from "@/components/ui/separator";
 import { useStayQuote } from "@/components/use-stay-quote";
+import { authClient } from "@/lib/auth-client";
 import { formatEuros, quote } from "@/lib/pricing";
 import { parisLocalToDate } from "@/lib/time";
 
@@ -41,6 +36,11 @@ type Props = {
   defaultReturn: string;
   /** First bookable day, "2026-10-20" */
   minDay: string;
+  /** Promo code carried in the URL (back from Google sign-in) */
+  defaultPromo: string;
+  /** The signed-in customer, or null: booking requires an account. */
+  customer: { name: string; email: string } | null;
+  googleEnabled: boolean;
 };
 
 const UNKNOWN_TERMINAL = "inconnu";
@@ -49,11 +49,19 @@ const PASSENGER_OPTIONS = [1, 2, 3, 4, 5, 6, 7, 8].map((n) => ({
   label: `${n} passager${n > 1 ? "s" : ""}`,
 }));
 
-export function BookingFlow({ parkings, defaultParking, defaultDropoff, defaultReturn, minDay }: Props) {
-  const [details, submitDetails, submitting] = useActionState<DetailsState, FormData>(
-    submitDetailsAction,
-    {},
-  );
+export function BookingFlow({
+  parkings,
+  defaultParking,
+  defaultDropoff,
+  defaultReturn,
+  minDay,
+  defaultPromo,
+  customer,
+  googleEnabled,
+}: Props) {
+  const router = useRouter();
+  const signInRef = useRef<HTMLDivElement>(null);
+  const [details, submitDetails, submitting] = useActionState<DetailsState, FormData>(submitDetailsAction, {});
   const [slug, setSlug] = useState(defaultParking);
   const [dates, setDates] = useState<StayDates>({
     from: defaultDropoff.slice(0, 10),
@@ -63,9 +71,13 @@ export function BookingFlow({ parkings, defaultParking, defaultDropoff, defaultR
   });
   const [terminal, setTerminal] = useState(UNKNOWN_TERMINAL);
   const [passengers, setPassengers] = useState("2");
-  const [editing, setEditing] = useState(false);
-  const [promoInput, setPromoInput] = useState(details.values?.promoCode ?? "");
-  const [appliedPromo, setAppliedPromo] = useState(details.values?.promoCode ?? "");
+  const [promoInput, setPromoInput] = useState(details.values?.promoCode ?? defaultPromo);
+  const [appliedPromo, setAppliedPromo] = useState(details.values?.promoCode ?? defaultPromo);
+
+  // The session ended while the form was open: show the sign-in again.
+  useEffect(() => {
+    if (details.signInRequired) router.refresh();
+  }, [details, router]);
 
   const parking = parkings.find((p) => p.slug === slug);
   const dropoff = `${dates.from}T${dates.dropoffTime}`;
@@ -81,12 +93,25 @@ export function BookingFlow({ parkings, defaultParking, defaultDropoff, defaultR
 
   // The price as charged comes from the server: it depends on how full the parking is.
   const server = useStayQuote(
-    price?.ok ? { parking: slug, dropoffAt: dropoff, returnAt: ret, promoCode: appliedPromo || undefined } : null,
+    price?.ok
+      ? {
+          parking: slug,
+          dropoffAt: dropoff,
+          returnAt: ret,
+          promoCode: appliedPromo || undefined,
+        }
+      : null,
   );
   const charged = server.quote?.ok ? server.quote : null;
   const promoError = charged?.promoError ?? null;
 
-  const verifying = details.pending && !editing;
+  // Google brings the customer back here with their choices, so nothing is retyped.
+  const callbackURL = `/reserver?${new URLSearchParams({
+    parking: slug,
+    dropoffAt: dropoff,
+    returnAt: ret,
+    ...(appliedPromo ? { promo: appliedPromo } : {}),
+  })}`;
   // React resets the form after each submit: refill what the customer typed.
   const typed = (name: string) => details.values?.[name] ?? "";
   const fieldError = (name: string) =>
@@ -94,22 +119,8 @@ export function BookingFlow({ parkings, defaultParking, defaultDropoff, defaultR
 
   return (
     <div className="grid gap-6 lg:grid-cols-[1fr_300px] lg:items-start">
-      {verifying ? (
-        <CodeStep
-          key={details.pending!.bookingId}
-          bookingId={details.pending!.bookingId}
-          email={details.pending!.email}
-          onBack={() => setEditing(true)}
-        />
-      ) : (
-        <form
-          action={(formData) => {
-            setEditing(false);
-            submitDetails(formData);
-          }}
-          id="booking-form"
-          className="space-y-8"
-        >
+      <div className="space-y-8">
+        <form action={submitDetails} id="booking-form" className="space-y-8">
           <FieldSet>
             <FieldLegend>Votre séjour</FieldLegend>
             <FieldGroup>
@@ -153,7 +164,10 @@ export function BookingFlow({ parkings, defaultParking, defaultDropoff, defaultR
                     onValueChange={setTerminal}
                     options={[
                       { value: UNKNOWN_TERMINAL, label: "Pas encore connu" },
-                      ...(parking?.terminals ?? []).map((t) => ({ value: t, label: t })),
+                      ...(parking?.terminals ?? []).map((t) => ({
+                        value: t,
+                        label: t,
+                      })),
                     ]}
                   />
                 </Field>
@@ -173,39 +187,79 @@ export function BookingFlow({ parkings, defaultParking, defaultDropoff, defaultR
 
           <Separator />
 
-          <FieldSet>
-            <FieldLegend>Vos coordonnées</FieldLegend>
-            <FieldGroup className="grid gap-4 sm:grid-cols-2">
-              <Field>
-                <FieldLabel htmlFor="customerName">Nom complet</FieldLabel>
-                <Input id="customerName" name="customerName" required autoComplete="name" defaultValue={typed("customerName")} />
-                {fieldError("customerName")}
-              </Field>
-              <Field>
-                <FieldLabel htmlFor="plate">Immatriculation</FieldLabel>
-                <Input id="plate" name="plate" required placeholder="AB-123-CD" className="uppercase placeholder:normal-case" defaultValue={typed("plate")} />
-                {fieldError("plate")}
-              </Field>
-              <Field>
-                <FieldLabel htmlFor="email">E-mail</FieldLabel>
-                <Input id="email" name="email" type="email" required autoComplete="email" defaultValue={typed("email")} />
-                {fieldError("email")}
-              </Field>
-              <Field>
-                <FieldLabel htmlFor="phone">Téléphone</FieldLabel>
-                <Input id="phone" name="phone" type="tel" required autoComplete="tel" defaultValue={typed("phone")} />
-                {fieldError("phone")}
-              </Field>
-            </FieldGroup>
-          </FieldSet>
+          {customer ? (
+            <FieldSet>
+              <FieldLegend>Vos coordonnées</FieldLegend>
+              <p className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-muted px-3 py-2 text-sm">
+                <span className="inline-flex items-center gap-2">
+                  <UserRoundIcon className="size-4 text-muted-foreground" />
+                  Connecté : <span className="font-medium">{customer.email}</span>
+                </span>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={async () => {
+                    await authClient.signOut();
+                    router.refresh();
+                  }}
+                >
+                  <LogOutIcon /> Changer de compte
+                </Button>
+              </p>
+              <FieldGroup className="grid gap-4 sm:grid-cols-2">
+                <Field>
+                  <FieldLabel htmlFor="customerName">Nom complet</FieldLabel>
+                  <Input
+                    id="customerName"
+                    name="customerName"
+                    required
+                    autoComplete="name"
+                    defaultValue={typed("customerName") || customer.name}
+                  />
+                  {fieldError("customerName")}
+                </Field>
+                <Field>
+                  <FieldLabel htmlFor="phone">Téléphone</FieldLabel>
+                  <Input id="phone" name="phone" type="tel" required autoComplete="tel" defaultValue={typed("phone")} />
+                  {fieldError("phone")}
+                </Field>
+                <Field>
+                  <FieldLabel htmlFor="plate">Immatriculation</FieldLabel>
+                  <Input
+                    id="plate"
+                    name="plate"
+                    required
+                    placeholder="AB-123-CD"
+                    className="uppercase placeholder:normal-case"
+                    defaultValue={typed("plate")}
+                  />
+                  {fieldError("plate")}
+                </Field>
+              </FieldGroup>
+            </FieldSet>
+          ) : null}
 
-          {details.error && (
+          {details.error && !details.retryBookingId && (
             <Alert variant="destructive">
               <AlertDescription>{details.error}</AlertDescription>
             </Alert>
           )}
         </form>
-      )}
+
+        {/* Outside the booking form: forms cannot be nested (Enter would submit the booking). */}
+        {!customer && (
+          <div ref={signInRef} id="connexion" className="scroll-mt-24 space-y-4 rounded-xl border p-5">
+            <div>
+              <p className="font-medium">Connectez-vous pour réserver</p>
+              <p className="text-sm text-muted-foreground">
+                Votre compte regroupe vos réservations dans « Mon espace ». Pas de compte ? Il est créé en même temps.
+              </p>
+            </div>
+            <SignInPanel googleEnabled={googleEnabled} callbackURL={callbackURL} />
+          </div>
+        )}
+      </div>
 
       <Card className="lg:sticky lg:top-20">
         <CardHeader>
@@ -229,7 +283,7 @@ export function BookingFlow({ parkings, defaultParking, defaultDropoff, defaultR
             <p className="text-destructive">{price && !price.ok ? price.error : "Choisissez la date de retour."}</p>
           )}
 
-          {!verifying && (
+          {!details.retryBookingId && (
             <div className="space-y-1.5">
               {appliedPromo && !promoError ? (
                 <p className="flex items-center justify-between gap-2 rounded-lg bg-emerald-50 px-3 py-2 text-emerald-800">
@@ -283,7 +337,9 @@ export function BookingFlow({ parkings, defaultParking, defaultDropoff, defaultR
           {/* Only a code the server accepted goes with the booking. */}
           <input type="hidden" name="promoCode" form="booking-form" value={charged?.promo ? appliedPromo : ""} />
 
-          {!verifying && (
+          {details.retryBookingId ? (
+            <RetryPayment bookingId={details.retryBookingId} firstError={details.error} />
+          ) : customer ? (
             <Button
               type="submit"
               form="booking-form"
@@ -292,11 +348,26 @@ export function BookingFlow({ parkings, defaultParking, defaultDropoff, defaultR
               disabled={submitting || !charged || server.loading}
             >
               {(submitting || server.loading) && <Loader2Icon className="animate-spin" />}
+              Payer {charged ? formatEuros(charged.totalCents) : ""}
+            </Button>
+          ) : (
+            <Button
+              type="button"
+              size="lg"
+              className="w-full"
+              onClick={() => {
+                signInRef.current?.scrollIntoView({
+                  behavior: "smooth",
+                  block: "center",
+                });
+                signInRef.current?.querySelector<HTMLElement>("input, button")?.focus();
+              }}
+            >
               Continuer
             </Button>
           )}
           <p className="text-xs text-muted-foreground">
-            Vérification de l&apos;e-mail, puis paiement sécurisé par Stripe (mode test).
+            Compte obligatoire (Google ou code par e-mail), puis paiement sécurisé par Stripe (mode test).
           </p>
         </CardContent>
       </Card>
@@ -304,75 +375,9 @@ export function BookingFlow({ parkings, defaultParking, defaultDropoff, defaultR
   );
 }
 
-function CodeStep({ bookingId, email, onBack }: { bookingId: string; email: string; onBack: () => void }) {
-  const [state, verify, verifyingCode] = useActionState<CodeState, FormData>(verifyCodeAction, {});
-  const [resent, setResent] = useState<CodeState>({});
-  const [resending, startResend] = useTransition();
-  const [code, setCode] = useState("");
-  const message = resent.error ?? resent.info;
-
-  return (
-    <Card>
-      <CardHeader>
-        <MailCheckIcon className="mb-2 size-6 text-primary" />
-        <CardTitle>Vérifiez votre e-mail</CardTitle>
-        <CardDescription>
-          Nous avons envoyé un code à 6 chiffres à <span className="font-medium text-foreground">{email}</span>.
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
-        {state.retryBookingId ? (
-          <RetryPayment bookingId={state.retryBookingId} firstError={state.error} />
-        ) : (
-        <form action={verify} className="space-y-5">
-          <input type="hidden" name="bookingId" value={bookingId} />
-          <InputOTP
-            name="code"
-            maxLength={6}
-            value={code}
-            onChange={setCode}
-            inputMode="numeric"
-            pattern="^[0-9]+$"
-            autoFocus
-            containerClassName="justify-start"
-          >
-            <InputOTPGroup>
-              {Array.from({ length: 6 }, (_, i) => (
-                <InputOTPSlot key={i} index={i} className="size-11 text-lg" />
-              ))}
-            </InputOTPGroup>
-          </InputOTP>
-          {state.error && <p className="text-sm text-destructive">{state.error}</p>}
-          <Button type="submit" size="lg" disabled={verifyingCode || code.length < 6}>
-            {verifyingCode && <Loader2Icon className="animate-spin" />}
-            Vérifier et payer
-          </Button>
-        </form>
-        )}
-        <div className="mt-6 flex flex-wrap items-center gap-x-4 gap-y-2 text-sm">
-          <Button variant="ghost" size="sm" onClick={onBack}>
-            <ArrowLeftIcon /> Modifier mes informations
-          </Button>
-          <Button
-            variant="link"
-            size="sm"
-            disabled={resending}
-            onClick={() => startResend(async () => setResent(await resendCodeAction(bookingId)))}
-          >
-            Renvoyer le code
-          </Button>
-          {message && (
-            <span className={resent.error ? "text-destructive" : "text-muted-foreground"}>{message}</span>
-          )}
-        </div>
-      </CardContent>
-    </Card>
-  );
-}
-
-/** Shown when Stripe could not start: the e-mail is verified and the spot held, so only payment is retried. */
+/** Shown when Stripe could not start: the spot is held, so only payment is retried. */
 function RetryPayment({ bookingId, firstError }: { bookingId: string; firstError?: string }) {
-  const [state, retry, retrying] = useActionState<CodeState, FormData>(retryPaymentAction, {});
+  const [state, retry, retrying] = useActionState<DetailsState, FormData>(retryPaymentAction, {});
   return (
     <form action={retry} className="space-y-4">
       <input type="hidden" name="bookingId" value={bookingId} />

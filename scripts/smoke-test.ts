@@ -2,57 +2,56 @@
 // (Neon with `npm run smoke:neon`), checks each step, then deletes everything it created.
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
-import { bookings } from "@/db/schema";
-import {
-  advancePickup,
-  cancelPickupRequest,
-  confirmPayment,
-  createUnverifiedBooking,
-  verifyEmailAndHold,
-} from "@/server/bookings";
-import { hashCode } from "@/server/email-code";
+import { bookings, user } from "@/db/schema";
+import { advancePickup, cancelPickupRequest, confirmPayment, holdBooking } from "@/server/bookings";
 import { submitReview } from "@/server/reviews";
 
 async function main() {
   const host = new URL(process.env.DATABASE_URL!).host;
   console.log("Base :", host);
 
-  const dropoff = new Date(Date.now() + 3 * 86400_000);
-  const ret = new Date(Date.now() + 6 * 86400_000);
-  const created = await createUnverifiedBooking({
-    parkingSlug: "orly",
-    dropoffAt: dropoff,
-    returnAt: ret,
-    returnTerminal: null,
-    customerName: "Test Neon",
-    email: "test-neon@example.com",
-    phone: "0600000000",
-    plate: "NE-123-ON",
-    passengers: 2,
-  });
-  if (!created.ok) throw new Error(created.error);
-  const id = created.booking.id;
-  console.log("1. Demande créée :", created.booking.reference, created.booking.status);
+  // Booking requires an account: a throwaway customer, deleted at the end.
+  const tag = Date.now().toString(36);
+  const [customer] = await db
+    .insert(user)
+    .values({ id: `smoke-${tag}`, name: "Test Neon", email: `smoke.${tag}@example.com`, emailVerified: true })
+    .returning();
+  console.log("1. Compte client de test créé");
 
+  let id: string | null = null;
   try {
-    await db.update(bookings).set({ emailCodeHash: hashCode(id, "123456") }).where(eq(bookings.id, id));
-    const wrong = await verifyEmailAndHold(id, "000000");
-    console.log("2. Mauvais code refusé :", !wrong.ok);
-    const held = await verifyEmailAndHold(id, "123456");
-    console.log("3. Code OK, place bloquée (transaction + FOR UPDATE) :", held.ok && held.booking.status);
-    console.log("4. Paiement confirmé :", await confirmPayment(id), "| 2e fois ignoré :", !(await confirmPayment(id)));
-    const token = created.booking.accessToken;
+    const dropoff = new Date(Date.now() + 3 * 86400_000);
+    const ret = new Date(Date.now() + 6 * 86400_000);
+    const held = await holdBooking(
+      {
+        parkingSlug: "orly",
+        dropoffAt: dropoff,
+        returnAt: ret,
+        returnTerminal: null,
+        customerName: "Test Neon",
+        phone: "0600000000",
+        plate: "NE-123-ON",
+        passengers: 2,
+      },
+      { userId: customer.id, email: customer.email },
+    );
+    if (!held.ok) throw new Error(held.error);
+    id = held.booking.id;
+    console.log("2. Place bloquée pour le compte (transaction + FOR UPDATE) :", held.booking.reference, held.booking.status);
+    console.log("3. Paiement confirmé :", await confirmPayment(id), "| 2e fois ignoré :", !(await confirmPayment(id)));
+    const token = held.booking.accessToken;
     await advancePickup({ accessToken: token }, "scheduled", "bags_ready", { returnTerminal: "Orly 2" });
-    console.log("5. Annulation du bouton :", await cancelPickupRequest(token));
+    console.log("4. Annulation du bouton :", await cancelPickupRequest(token));
     await advancePickup({ accessToken: token }, "scheduled", "bags_ready", { returnTerminal: "Orly 2" });
     await advancePickup({ id }, "bags_ready", "en_route");
     await advancePickup({ id }, "en_route", "picked_up");
     const review = await submitReview({ accessToken: token, rating: 5, comment: "Test", publishConsent: false });
-    console.log("6. Avis enregistré :", review.ok);
+    console.log("5. Avis enregistré :", review.ok);
   } finally {
-    await db.delete(bookings).where(eq(bookings.id, id));
-    const left = await db.select().from(bookings).where(eq(bookings.id, id));
-    console.log("7. Nettoyage (réservation + avis supprimés) :", left.length === 0);
+    if (id) await db.delete(bookings).where(eq(bookings.id, id));
+    await db.delete(user).where(eq(user.id, customer.id));
+    const left = id ? await db.select().from(bookings).where(eq(bookings.id, id)) : [];
+    console.log("6. Nettoyage (réservation, avis et compte supprimés) :", left.length === 0);
   }
 }
 

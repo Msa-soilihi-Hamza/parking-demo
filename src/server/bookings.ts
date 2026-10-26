@@ -6,15 +6,7 @@ import { canTransition, type PickupStatus } from "@/lib/pickup";
 import { finalPrice, quote, type PriceBreakdown, type PriceLine } from "@/lib/pricing";
 import { normalizePromoCode, promoDiscountCents, promoLabel, promoProblem } from "@/lib/promo";
 import { firstFreeSpot, isValidSpot, spotRange } from "@/lib/spots";
-import {
-  CODE_MAX_ATTEMPTS,
-  CODE_RESEND_DELAY_MS,
-  CODE_TTL_MS,
-  codeMatches,
-  generateCode,
-  hashCode,
-} from "@/server/email-code";
-import { sendBookingConfirmation, sendVerificationCode, sendWalkInConfirmation } from "@/server/mailer";
+import { sendBookingConfirmation, sendWalkInConfirmation } from "@/server/mailer";
 
 /** A verified but unpaid booking holds its spot for this long (Stripe Checkout's minimum). */
 export const PAYMENT_HOLD_MINUTES = 30;
@@ -148,12 +140,14 @@ export type NewBookingInput = {
   returnAt: Date;
   returnTerminal: string | null;
   customerName: string;
-  email: string;
   phone: string;
   plate: string;
   passengers: number;
   promoCode?: string | null;
 };
+
+/** The signed-in customer: their e-mail is verified by their account (code or Google). */
+export type Customer = { userId: string; email: string };
 
 type Result<T> = ({ ok: true } & T) | { ok: false; error: string };
 
@@ -170,147 +164,85 @@ export function newAccessToken() {
 const FULL = "Désolé, ce parking est complet sur une partie de vos dates.";
 
 /**
- * Step 1: saves the request and e-mails a 6-digit code.
- * Nothing is held yet, so unverified requests cannot block real customers.
+ * A signed-in customer books: the spot is held for payment right away.
+ * The parking row is locked (FOR UPDATE) so two customers racing for the last spot
+ * are handled one after the other: the second one sees it taken. A limited promo code
+ * is locked the same way, so two customers cannot take its last use.
  */
-export async function createUnverifiedBooking(
+export async function holdBooking(
   input: NewBookingInput,
-): Promise<Result<{ booking: Booking }>> {
+  customer: Customer,
+): Promise<Result<{ booking: Booking; parking: Parking }>> {
   const [parking] = await db.select().from(parkings).where(eq(parkings.slug, input.parkingSlug));
   if (!parking) return { ok: false, error: "Parking inconnu." };
-
   if (input.returnTerminal && !parking.terminals.includes(input.returnTerminal)) {
     return { ok: false, error: "Terminal inconnu pour cet aéroport." };
   }
 
-  const price = await priceStay({ parking, dropoffAt: input.dropoffAt, returnAt: input.returnAt, promoCode: input.promoCode });
-  if (!price.ok) return { ok: false, error: price.error };
-  // A refused code is never dropped silently: the customer would pay more than expected.
-  if (price.promoError) return { ok: false, error: price.promoError };
-  // Early feedback only; the real check happens under lock once the e-mail is verified.
-  if (price.occupied >= parking.capacity) return { ok: false, error: FULL };
-
-  const [booking] = await db
-    .insert(bookings)
-    .values({
-      reference: newReference(),
-      accessToken: newAccessToken(),
-      parkingId: parking.id,
-      customerName: input.customerName,
-      email: input.email,
-      phone: input.phone,
-      plate: input.plate,
-      passengers: input.passengers,
-      dropoffAt: input.dropoffAt,
-      returnAt: input.returnAt,
-      returnTerminal: input.returnTerminal,
-      priceCents: price.totalCents,
-      discountCents: price.discountCents,
-      promoCodeId: price.promo?.id ?? null,
-      status: "pending_verification",
-    })
-    .returning();
-
-  await issueCode(booking);
-  return { ok: true, booking };
-}
-
-async function issueCode(booking: Booking) {
-  // Online bookings always have an e-mail: it is what gets verified.
-  if (!booking.email) throw new Error("Réservation sans e-mail : rien à vérifier.");
-  const code = generateCode();
-  const now = new Date();
-  await db
-    .update(bookings)
-    .set({
-      emailCodeHash: hashCode(booking.id, code),
-      emailCodeExpiresAt: new Date(now.getTime() + CODE_TTL_MS),
-      emailCodeSentAt: now,
-      emailCodeAttempts: 0,
-    })
-    .where(eq(bookings.id, booking.id));
-  await sendVerificationCode(booking.email, code);
-}
-
-export async function resendCode(bookingId: string): Promise<Result<object>> {
-  const [booking] = await db.select().from(bookings).where(eq(bookings.id, bookingId));
-  if (!booking || booking.status !== "pending_verification") {
-    return { ok: false, error: "Cette demande n'est plus en attente de vérification." };
-  }
-  if (booking.emailCodeSentAt && Date.now() - booking.emailCodeSentAt.getTime() < CODE_RESEND_DELAY_MS) {
-    return { ok: false, error: "Patientez une minute avant de redemander un code." };
-  }
-  await issueCode(booking);
-  return { ok: true };
-}
-
-/**
- * Step 2: checks the code, then holds a spot for payment.
- * The parking row is locked (FOR UPDATE) so two customers racing for the
- * last spot are handled one after the other: the second one sees it taken.
- */
-export async function verifyEmailAndHold(
-  bookingId: string,
-  code: string,
-): Promise<Result<{ booking: Booking; parking: Parking }>> {
   return db.transaction(async (tx) => {
-    const [booking] = await tx
-      .select()
-      .from(bookings)
-      .where(eq(bookings.id, bookingId))
-      .for("update");
-    if (!booking || booking.status !== "pending_verification" || !booking.emailCodeHash) {
-      return { ok: false, error: "Cette demande n'est plus en attente de vérification." };
-    }
-    if (booking.emailCodeAttempts >= CODE_MAX_ATTEMPTS) {
-      return { ok: false, error: "Trop d'essais. Demandez un nouveau code." };
-    }
-    if (!booking.emailCodeExpiresAt || booking.emailCodeExpiresAt < new Date()) {
-      return { ok: false, error: "Ce code a expiré. Demandez-en un nouveau." };
-    }
-    if (!codeMatches(booking.id, code, booking.emailCodeHash)) {
-      await tx
-        .update(bookings)
-        .set({ emailCodeAttempts: booking.emailCodeAttempts + 1 })
-        .where(eq(bookings.id, booking.id));
-      const left = CODE_MAX_ATTEMPTS - booking.emailCodeAttempts - 1;
-      return { ok: false, error: `Code incorrect. ${left} essai${left > 1 ? "s" : ""} restant${left > 1 ? "s" : ""}.` };
-    }
+    await tx.select({ id: parkings.id }).from(parkings).where(eq(parkings.id, parking.id)).for("update");
 
-    const [parking] = await tx
-      .select()
-      .from(parkings)
-      .where(eq(parkings.id, booking.parkingId))
-      .for("update");
-    const peak = await peakOccupancy(tx, parking.id, booking.dropoffAt, booking.returnAt);
-    if (peak >= parking.capacity) {
-      await tx.update(bookings).set({ status: "cancelled" }).where(eq(bookings.id, booking.id));
-      return { ok: false, error: FULL };
-    }
+    const price = await priceStay(
+      { parking, dropoffAt: input.dropoffAt, returnAt: input.returnAt, promoCode: input.promoCode },
+      tx,
+    );
+    if (!price.ok) return price;
+    // A refused code is never dropped silently: the customer would pay more than expected.
+    if (price.promoError) return { ok: false, error: price.promoError };
+    if (price.occupied >= parking.capacity) return { ok: false, error: FULL };
 
-    // A limited code: locked, then counted, so two customers cannot take its last use.
-    if (booking.promoCodeId) {
-      const [promo] = await tx.select().from(promoCodes).where(eq(promoCodes.id, booking.promoCodeId)).for("update");
-      const refusal = await promoRefusal(tx, promo, booking.id);
-      if (refusal) {
-        await tx.update(bookings).set({ status: "cancelled" }).where(eq(bookings.id, booking.id));
-        return { ok: false, error: `${refusal} Recommencez la réservation sans ce code.` };
-      }
+    if (price.promo) {
+      const promo = await findPromo(tx, price.promo.code, true);
+      const refusal = await promoRefusal(tx, promo);
+      if (refusal) return { ok: false, error: refusal };
     }
 
     const now = new Date();
-    const [held] = await tx
-      .update(bookings)
-      .set({
+    const [booking] = await tx
+      .insert(bookings)
+      .values({
+        reference: newReference(),
+        accessToken: newAccessToken(),
+        parkingId: parking.id,
+        userId: customer.userId,
+        customerName: input.customerName,
+        email: customer.email,
+        phone: input.phone,
+        plate: input.plate,
+        passengers: input.passengers,
+        dropoffAt: input.dropoffAt,
+        returnAt: input.returnAt,
+        returnTerminal: input.returnTerminal,
+        priceCents: price.totalCents,
+        discountCents: price.discountCents,
+        promoCodeId: price.promo?.id ?? null,
         status: "pending_payment",
-        emailVerifiedAt: now,
         heldAt: now,
-        emailCodeHash: null,
       })
-      .where(eq(bookings.id, booking.id))
       .returning();
-    return { ok: true, booking: held, parking };
+    return { ok: true, booking, parking };
   });
+}
+
+/**
+ * "Mon espace": the customer's bookings, latest stay first. Bookings made before
+ * accounts existed are found by their e-mail, which the account has verified.
+ */
+export async function listCustomerBookings(customer: Customer) {
+  return db
+    .select({ booking: bookings, parkingName: parkings.name })
+    .from(bookings)
+    .innerJoin(parkings, eq(bookings.parkingId, parkings.id))
+    .where(
+      and(
+        inArray(bookings.status, ["confirmed", "pending_payment"]),
+        or(
+          eq(bookings.userId, customer.userId),
+          sql`lower(${bookings.email}) = ${customer.email.toLowerCase()}`,
+        ),
+      ),
+    )
+    .orderBy(desc(bookings.dropoffAt));
 }
 
 export async function attachStripeSession(bookingId: string, sessionId: string) {

@@ -2,25 +2,24 @@
 import { eq, inArray, sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { db } from "@/db";
-import { bookings, parkings, promoCodes, reviews, type Parking } from "@/db/schema";
+import { bookings, parkings, promoCodes, reviews, user, type Parking } from "@/db/schema";
 import {
   advancePickup,
   cancelPickupRequest,
   checkInVehicle,
   confirmPayment,
-  createUnverifiedBooking,
   createWalkInBooking,
+  holdBooking,
+  listCustomerBookings,
   listVehiclesOnSite,
   suggestSpot,
-  verifyEmailAndHold,
+  type Customer,
   type NewBookingInput,
 } from "./bookings";
-import { hashCode } from "./email-code";
 import { submitReview } from "./reviews";
 
 // No real e-mails during tests.
 vi.mock("./mailer", () => ({
-  sendVerificationCode: vi.fn(),
   sendBookingConfirmation: vi.fn(),
   sendWalkInConfirmation: vi.fn(),
 }));
@@ -28,7 +27,6 @@ vi.mock("./mailer", () => ({
 const slug = `test-${Date.now()}`;
 // A second parking with real rows of spots (A1–B20), for the front desk.
 const deskSlug = `${slug}-desk`;
-const CODE = "123456";
 let parkingId: number;
 let deskParking: Parking;
 
@@ -38,24 +36,24 @@ const stay = (dropoff: string, ret: string, name: string, parkingSlug = slug): N
   returnAt: new Date(ret),
   returnTerminal: null,
   customerName: name,
-  email: "test@example.com",
   phone: "0600000000",
   plate: "TE-123-ST",
   passengers: 1,
 });
 
-/** Creates a request and forces a known code, as if read from the e-mail. */
-async function requestWithKnownCode(input: NewBookingInput) {
-  const created = await createUnverifiedBooking(input);
-  if (!created.ok) throw new Error(created.error);
-  await db
-    .update(bookings)
-    .set({ emailCodeHash: hashCode(created.booking.id, CODE) })
-    .where(eq(bookings.id, created.booking.id));
-  return created.booking.id;
+// Booking requires an account: a test customer, as if signed in (code or Google).
+const accountTag = String(Date.now()).slice(-8);
+const customer: Customer = { userId: `test-user-${accountTag}`, email: `client.${accountTag}@example.com` };
+
+/** The signed-in customer books: the spot is held for payment. Returns the booking id. */
+async function hold(input: NewBookingInput) {
+  const held = await holdBooking(input, customer);
+  if (!held.ok) throw new Error(held.error);
+  return held.booking.id;
 }
 
 beforeAll(async () => {
+  await db.insert(user).values({ id: customer.userId, name: "Client Test", email: customer.email, emailVerified: true });
   const [parking] = await db
     .insert(parkings)
     .values({
@@ -87,53 +85,61 @@ afterAll(async () => {
   if (rows.length) await db.delete(bookings).where(inArray(bookings.id, rows.map((r) => r.id)));
   await db.delete(parkings).where(inArray(parkings.id, ids));
   await db.delete(promoCodes).where(inArray(promoCodes.code, ["DIX", "VIEUX", "UNIQUE"].map(promoCode)));
+  await db.delete(user).where(eq(user.id, customer.userId));
 });
 
-describe("e-mail verification", () => {
-  it("does not hold a spot before the e-mail is verified", async () => {
-    const first = await createUnverifiedBooking(stay("2027-05-01T08:00Z", "2027-05-03T08:00Z", "A"));
-    const second = await createUnverifiedBooking(stay("2027-05-01T08:00Z", "2027-05-03T08:00Z", "B"));
-    expect(first.ok && second.ok).toBe(true);
+describe("booking with an account", () => {
+  it("holds the spot for the signed-in customer, with the e-mail of the account", async () => {
+    const held = await holdBooking(stay("2027-05-01T08:00Z", "2027-05-03T08:00Z", "Compte"), customer);
+    if (!held.ok) throw new Error(held.error);
+    expect(held.booking).toMatchObject({ userId: customer.userId, email: customer.email, status: "pending_payment" });
+    expect(held.booking.heldAt).toBeInstanceOf(Date);
   });
 
-  it("rejects a wrong code and counts the attempt", async () => {
-    const id = await requestWithKnownCode(stay("2027-06-01T08:00Z", "2027-06-02T08:00Z", "C"));
-    const result = await verifyEmailAndHold(id, "000000");
-    expect(result.ok).toBe(false);
-    const [row] = await db.select().from(bookings).where(eq(bookings.id, id));
-    expect(row.emailCodeAttempts).toBe(1);
-    expect(row.status).toBe("pending_verification");
-  });
-
-  it("locks the request after 5 wrong codes, even with the right one", async () => {
-    const id = await requestWithKnownCode(stay("2027-06-10T08:00Z", "2027-06-11T08:00Z", "D"));
-    for (let i = 0; i < 5; i++) await verifyEmailAndHold(id, "000000");
-    expect((await verifyEmailAndHold(id, CODE)).ok).toBe(false);
+  it("lists the customer's bookings in their space, including older ones found by e-mail", async () => {
+    // A booking from before accounts existed: no user, same e-mail written differently.
+    const [older] = await db
+      .insert(bookings)
+      .values({
+        reference: `ESC-OLD${accountTag}`,
+        accessToken: `older-${accountTag}`,
+        parkingId,
+        customerName: "Client Test",
+        email: customer.email.toUpperCase(),
+        phone: "0600000000",
+        plate: "OL-000-DD",
+        passengers: 1,
+        dropoffAt: new Date("2027-05-10T08:00Z"),
+        returnAt: new Date("2027-05-11T08:00Z"),
+        priceCents: 1000,
+        status: "confirmed",
+      })
+      .returning();
+    const ids = (await listCustomerBookings(customer)).map((r) => r.booking.id);
+    expect(ids).toContain(older.id);
+    expect(ids.length).toBeGreaterThanOrEqual(2);
   });
 });
 
 describe("holding the last spot", () => {
   it("lets only one of ten simultaneous customers take the last spot", async () => {
-    const ids = await Promise.all(
+    const results = await Promise.all(
       Array.from({ length: 10 }, (_, i) =>
-        requestWithKnownCode(stay("2027-03-01T08:00Z", "2027-03-05T08:00Z", `Client ${i}`)),
+        holdBooking(stay("2027-03-01T08:00Z", "2027-03-05T08:00Z", `Client ${i}`), customer),
       ),
     );
-    const results = await Promise.all(ids.map((id) => verifyEmailAndHold(id, CODE)));
     expect(results.filter((r) => r.ok)).toHaveLength(1);
     expect(results.filter((r) => !r.ok)).toHaveLength(9);
   });
 
   it("accepts a stay that starts after the previous car has left", async () => {
-    const id = await requestWithKnownCode(stay("2027-03-05T09:00Z", "2027-03-07T09:00Z", "Suivant"));
-    expect((await verifyEmailAndHold(id, CODE)).ok).toBe(true);
+    expect((await holdBooking(stay("2027-03-05T09:00Z", "2027-03-07T09:00Z", "Suivant"), customer)).ok).toBe(true);
   });
 });
 
 describe("payment", () => {
   it("confirms a payment only once, even if Stripe sends the event twice", async () => {
-    const id = await requestWithKnownCode(stay("2027-04-01T08:00Z", "2027-04-02T08:00Z", "Stripe"));
-    expect((await verifyEmailAndHold(id, CODE)).ok).toBe(true);
+    const id = await hold(stay("2027-04-01T08:00Z", "2027-04-02T08:00Z", "Stripe"));
     expect(await confirmPayment(id)).toBe(true);
     expect(await confirmPayment(id)).toBe(false);
   });
@@ -141,8 +147,7 @@ describe("payment", () => {
 
 describe("cancelling the bags button", () => {
   async function confirmedBooking(from: string, to: string) {
-    const id = await requestWithKnownCode(stay(from, to, "Retour"));
-    await verifyEmailAndHold(id, CODE);
+    const id = await hold(stay(from, to, "Retour"));
     await confirmPayment(id);
     const [row] = await db.select().from(bookings).where(eq(bookings.id, id));
     return row;
@@ -173,8 +178,7 @@ describe("front desk check-in", () => {
 
   /** A paid booking at the desk parking, not checked in yet. */
   async function paidAtDesk(from: string, to: string, name: string) {
-    const id = await requestWithKnownCode(stay(from, to, name, deskSlug));
-    await verifyEmailAndHold(id, CODE);
+    const id = await hold(stay(from, to, name, deskSlug));
     await confirmPayment(id);
     return bookingRow(id);
   }
@@ -194,8 +198,8 @@ describe("front desk check-in", () => {
   });
 
   it("refuses a car whose booking is not paid", async () => {
-    const id = await requestWithKnownCode(stay("2027-09-10T08:00Z", "2027-09-11T08:00Z", "Impayé", deskSlug));
-    await verifyEmailAndHold(id, CODE);
+    // Held but not paid.
+    const id = await hold(stay("2027-09-10T08:00Z", "2027-09-11T08:00Z", "Impayé", deskSlug));
     const { reference } = await bookingRow(id);
 
     expect(await checkInVehicle(reference, "A1")).toEqual({ ok: false, error: "Cette réservation n'est pas payée." });
@@ -311,22 +315,21 @@ describe("promo codes", () => {
 
   it("stores the discount of a valid code with the booking", async () => {
     // 3 days at 10 €: 30 €, minus 10 %.
-    const created = await createUnverifiedBooking(desk("2028-01-01T08:00Z", "2028-01-04T08:00Z", "Promo", promoCode("DIX")));
+    const created = await holdBooking(desk("2028-01-01T08:00Z", "2028-01-04T08:00Z", "Promo", promoCode("DIX")), customer);
     if (!created.ok) throw new Error(created.error);
     expect(created.booking).toMatchObject({ priceCents: 2700, discountCents: 300 });
   });
 
   it("refuses an expired code instead of charging the full price silently", async () => {
-    const created = await createUnverifiedBooking(desk("2028-01-10T08:00Z", "2028-01-11T08:00Z", "Expiré", promoCode("VIEUX")));
+    const created = await holdBooking(desk("2028-01-10T08:00Z", "2028-01-11T08:00Z", "Expiré", promoCode("VIEUX")), customer);
     expect(created).toEqual({ ok: false, error: "Ce code promo a expiré." });
   });
 
   it("gives the last use of a limited code to only one of two customers", async () => {
-    const [a, b] = await Promise.all([
-      requestWithKnownCode(desk("2028-02-01T08:00Z", "2028-02-02T08:00Z", "Unique A", promoCode("UNIQUE"))),
-      requestWithKnownCode(desk("2028-02-01T08:00Z", "2028-02-02T08:00Z", "Unique B", promoCode("UNIQUE"))),
+    const results = await Promise.all([
+      holdBooking(desk("2028-02-01T08:00Z", "2028-02-02T08:00Z", "Unique A", promoCode("UNIQUE")), customer),
+      holdBooking(desk("2028-02-01T08:00Z", "2028-02-02T08:00Z", "Unique B", promoCode("UNIQUE")), customer),
     ]);
-    const results = await Promise.all([verifyEmailAndHold(a, CODE), verifyEmailAndHold(b, CODE)]);
     expect(results.filter((r) => r.ok)).toHaveLength(1);
     const refused = results.find((r) => !r.ok);
     expect(refused && !refused.ok && refused.error).toMatch(/nombre d'utilisations/);
@@ -336,8 +339,7 @@ describe("promo codes", () => {
 
 describe("reviews", () => {
   async function pickedUpBooking(from: string, to: string, name: string) {
-    const id = await requestWithKnownCode(stay(from, to, name));
-    await verifyEmailAndHold(id, CODE);
+    const id = await hold(stay(from, to, name));
     await confirmPayment(id);
     const [row] = await db.select().from(bookings).where(eq(bookings.id, id));
     return row;

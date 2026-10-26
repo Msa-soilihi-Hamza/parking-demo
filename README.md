@@ -9,7 +9,8 @@ Projet de démonstration (marque et données fictives) : un parcours de réserva
 | Écran | Rôle |
 |---|---|
 | `/` | Landing page : promesse, fonctionnement, tarifs |
-| `/reserver` | Parking et dates avec **prix immédiat**, **code promo**, coordonnées, **vérification de l'e-mail par code à 6 chiffres**, puis **paiement Stripe** (mode test) |
+| `/reserver` | Parking et dates avec **prix immédiat**, **code promo**, puis **connexion obligatoire** (Google ou code à 6 chiffres par e-mail, sans mot de passe), coordonnées et **paiement Stripe** (mode test) |
+| `/connexion`, `/compte` | **Compte client** : connexion par Google ou par code reçu par e-mail ; « Mon espace » liste les réservations à venir et passées (les anciennes sont retrouvées par l'e-mail vérifié du compte) |
 | `/reservation/[token]` | Lien personnel du client (reçu par e-mail) : **QR code à présenter à l'accueil**, bouton « J'ai mes bagages » à tout moment (annulable tant que la navette n'est pas partie), suivi en direct, puis avis (étoiles + commentaire) |
 | `/navette` | **Espace navette** (chauffeurs, code `navette`) : « En direct » (clients à récupérer maintenant, **notifications push** quand un client a ses bagages) et « Journées » (une bande de jours du passé au futur : retours prévus, puis temps d'attente et notes une fois la journée passée) |
 | `/accueil` | **Accueil du parking** (code `accueil`) : « Arrivées » (voitures attendues aujourd'hui ; le QR code du client ou sa référence ouvre sa fiche, l'agent valide « Véhicule déposé » avec la **place proposée** ou une autre), « Plan » (les places de chaque parking, libres, occupées ou à sortir bientôt, et la prochaine place à donner), « Véhicules » (voitures sur place, recherche par plaque, nom, référence ou place, et liste **À préparer** : clients en route ou de retour dans les 3 h) et « Nouveau client » (un client **sans réservation** paie sur place et laisse sa voiture) |
@@ -26,10 +27,18 @@ Pour tester sans réserver :
 ## Choix techniques
 
 - **Next.js 16 (App Router, Server Actions), TypeScript, Tailwind CSS, shadcn/ui.**
-- **Vérification de l'e-mail avant tout blocage de place.** Le code à 6 chiffres est envoyé par Gmail
-  (SMTP), seul son hash est stocké, il expire après 10 minutes et la demande se bloque après 5 essais.
-  Une demande non vérifiée ne réserve aucune place : impossible de bloquer le parking avec de fausses
-  adresses.
+- **Comptes clients avec [Better Auth](https://www.better-auth.com/docs)**, configurés d'après sa
+  documentation officielle (`src/server/auth.ts`) : module **Email OTP** (code à 6 chiffres, valable
+  10 minutes, 5 essais, **stocké haché**, sans mot de passe, compte créé à la première connexion) et
+  **Google**. Le code part par le même Gmail que les autres e-mails, sans attendre l'envoi (recommandation de
+  la doc contre les attaques temporelles) mais avec `waitUntil` sur Vercel. Limitation des tentatives
+  activée et **stockée en base** (sur Vercel, chaque fonction a sa propre mémoire) : 3 envois de code par
+  minute. Tables générées par la CLI officielle (`npx auth@1.7.13 generate`), migrations avec drizzle-kit.
+  La session est vérifiée **sur chaque page et action** concernée, comme le recommande la doc, pas
+  seulement globalement. Réserver exige d'être connecté ; le lien personnel envoyé par e-mail reste valable
+  sans connexion (bouton « J'ai mes bagages » à l'aéroport). Un client enregistré à l'accueil n'a pas
+  besoin de compte. Même e-mail par Google et par code = même compte (liaison par défaut, Google
+  certifiant l'e-mail).
 - **PostgreSQL dans Docker**, accès via **Drizzle ORM**, migrations versionnées dans `drizzle/`.
 - **Pas de surréservation.** Une fois l'e-mail vérifié, la mise en attente de paiement verrouille la ligne du parking
   (`SELECT … FOR UPDATE`) puis calcule le **pic d'occupation** sur la période demandée. Deux clients qui
@@ -133,6 +142,8 @@ Variables à définir dans Vercel : `DATABASE_URL` (pooled), `APP_URL` (adresse 
 `STRIPE_SECRET_KEY` (`sk_test_…`), `STRIPE_WEBHOOK_SECRET` (endpoint
 `https://…/api/stripe/webhook` créé dans le tableau de bord Stripe, mode test, événements
 `checkout.session.completed` et `checkout.session.expired`), `GMAIL_USER`, `GMAIL_APP_PASSWORD`,
+`BETTER_AUTH_SECRET` (au moins 32 caractères aléatoires), `GOOGLE_CLIENT_ID` et `GOOGLE_CLIENT_SECRET`
+(Google Cloud Console, adresse de retour `https://…/api/auth/callback/google`),
 `SHUTTLE_ACCESS_CODE` (code de la navette), `DESK_ACCESS_CODE` (code de l'accueil), `MANAGER_ACCESS_CODE` (code de la gestion), `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT`.
 
 ## Tests
@@ -144,7 +155,7 @@ npm test
 - Tarification (paliers, arrondis, limites, codes promo, prix minimum), validité des codes en jours (heure de Paris)
 - Fuseau horaire de Paris (heure d'été, d'hiver, nuit du changement)
 - Machine à états du retour
-- Code e-mail (format, vérification)
+- Connexion par code e-mail avec la vraie instance Better Auth (envoi, création du compte et de la session, mauvais code refusé, code invalidé après 5 essais, code stocké haché)
 - Nom public des avis (« Sarah M. »)
 - Référence et place saisies à l'accueil (format, majuscules, espaces)
-- Intégration avec la base : vérification e-mail (mauvais code, blocage après 5 essais), surréservation simultanée, enchaînement de séjours, paiement confirmé une seule fois, annulation du bouton, avis (avant/après prise en charge, un seul), dépôt du véhicule (une seule fois, refusé si non payée), recherche des véhicules sur place, client sans réservation (payé sur place, refusé si complet), places (inexistante, déjà occupée, deux agents en même temps, place proposée), codes promo (remise enregistrée, code expiré refusé, dernière utilisation disputée, création avec validité en jours, doublon refusé, désactivation immédiate, code épuisé)
+- Intégration avec la base : réservation liée au compte (et anciennes réservations retrouvées par e-mail), surréservation simultanée, enchaînement de séjours, paiement confirmé une seule fois, annulation du bouton, avis (avant/après prise en charge, un seul), dépôt du véhicule (une seule fois, refusé si non payée), recherche des véhicules sur place, client sans réservation (payé sur place, refusé si complet), places (inexistante, déjà occupée, deux agents en même temps, place proposée), codes promo (remise enregistrée, code expiré refusé, dernière utilisation disputée, création avec validité en jours, doublon refusé, désactivation immédiate, code épuisé)
