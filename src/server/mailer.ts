@@ -77,6 +77,20 @@ export async function sendPickupRequestReceived(booking: Booking, terminal: stri
   );
 }
 
+/** The customer asked to delete their account: the link confirms it (Better Auth, 24 h). */
+export async function sendAccountDeletionLink(to: string, url: string) {
+  await send(
+    to,
+    "Confirmez la suppression de votre compte Escale",
+    `Pour supprimer définitivement votre compte, ouvrez ce lien dans le navigateur où vous êtes connecté : ${url}\n` +
+      "Il est valable 24 heures. Si vous n'avez rien demandé, ignorez cet e-mail : votre compte reste intact.",
+    layout(`<p><strong>Supprimer votre compte Escale ?</strong></p>
+  <p>Vos réservations ne seront plus rattachées à vous : votre nom, votre téléphone et votre immatriculation en seront effacés. Seuls les montants et les dates restent, pour la comptabilité.</p>
+  <p><a href="${url}" style="display:inline-block;background:#b91c1c;color:#fff;padding:12px 20px;border-radius:8px;text-decoration:none">Supprimer définitivement mon compte</a></p>
+  <p style="color:#737373">Ouvrez ce lien dans le navigateur où vous êtes connecté. Il est valable 24 heures. Si vous n'avez rien demandé, ignorez cet e-mail : votre compte reste intact.</p>`),
+  );
+}
+
 /** Sent once the driver has picked the customer up: the link opens the review form. */
 export async function sendReviewRequest(booking: Booking) {
   const link = `${appUrl()}/reservation/${booking.accessToken}#avis`;

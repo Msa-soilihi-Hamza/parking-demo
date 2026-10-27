@@ -2,14 +2,17 @@ import { waitUntil } from "@vercel/functions";
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { nextCookies } from "better-auth/next-js";
-import { emailOTP } from "better-auth/plugins";
+import { APIError } from "better-auth/api";
+import { admin, emailOTP } from "better-auth/plugins";
 import { db } from "@/db";
 import * as schema from "@/db/schema";
-import { sendVerificationCode } from "@/server/mailer";
+import { ac, roles } from "@/lib/permissions";
+import { activeBookingOf, anonymizeBookingsOf } from "@/server/account-deletion";
+import { sendAccountDeletionLink, sendVerificationCode } from "@/server/mailer";
 import { appUrl } from "@/server/stripe";
 
-// Customer accounts (Better Auth): sign in with a 6-digit code sent by e-mail, no
-// password, or with Google. The team spaces keep their own access codes.
+// Accounts (Better Auth): sign in with a 6-digit code sent by e-mail, no password, or
+// with Google. Customers and the team use the same sign-in; a role opens team spaces.
 
 const google =
   process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET
@@ -25,6 +28,27 @@ export const auth = betterAuth({
   secret: process.env.BETTER_AUTH_SECRET,
   database: drizzleAdapter(db, { provider: "pg", schema }),
   socialProviders: google ? { google } : {},
+  user: {
+    // The customer can delete their account from "Mon espace", confirmed by an e-mail link.
+    deleteUser: {
+      enabled: true,
+      // Without this, deletion would be immediate: the e-mail proves it is really them.
+      async sendDeleteAccountVerification({ user, url }) {
+        await sendAccountDeletionLink(user.email, url);
+      },
+      async beforeDelete(user) {
+        const active = await activeBookingOf(user);
+        if (active) {
+          throw new APIError("BAD_REQUEST", {
+            message: `Réservation en cours (${active}) : vous pourrez supprimer votre compte après votre retour.`,
+          });
+        }
+      },
+      async afterDelete(user) {
+        await anonymizeBookingsOf(user);
+      },
+    },
+  },
   // On Vercel each function has its own memory: counters live in the database.
   rateLimit: {
     enabled: true,
@@ -49,6 +73,9 @@ export const auth = betterAuth({
         );
       },
     }),
+    // Team roles: chauffeur, accueil, responsable (all rights). Set directly in the
+    // database by scripts/create-staff.ts, never chosen at sign-up.
+    admin({ ac, roles, defaultRole: "user", adminRoles: ["responsable"] }),
     // Lets server actions set the session cookie; must stay last (Better Auth docs).
     nextCookies(),
   ],

@@ -4,7 +4,7 @@ import { PlusIcon } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
-import type { TeamSpace } from "@/server/team-access";
+import type { TeamSpace } from "@/lib/permissions";
 
 type Tab = { href: string; label: string; short?: string; icon?: boolean; matches: (pathname: string) => boolean };
 

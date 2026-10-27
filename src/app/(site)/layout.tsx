@@ -1,5 +1,6 @@
-import { UserRoundIcon } from "lucide-react";
 import Link from "next/link";
+import { Suspense } from "react";
+import { AccountLink, SignInLink } from "@/components/account-link";
 import { Button } from "@/components/ui/button";
 import { SUPPORT_PHONE, SUPPORT_PHONE_HREF } from "@/lib/contact";
 
@@ -13,21 +14,10 @@ export default function SiteLayout({ children }: LayoutProps<"/">) {
             Escale
           </Link>
           <nav className="flex items-center gap-1">
-            {/* The three team spaces; on phones only "Réserver" stays, the links are in the demo section. */}
-            <Button variant="ghost" size="sm" className="hidden sm:inline-flex" render={<Link href="/navette" />} nativeButton={false}>
-              Navette
-            </Button>
-            <Button variant="ghost" size="sm" className="hidden sm:inline-flex" render={<Link href="/accueil" />} nativeButton={false}>
-              Accueil
-            </Button>
-            <Button variant="ghost" size="sm" className="hidden sm:inline-flex" render={<Link href="/gestion" />} nativeButton={false}>
-              Gestion
-            </Button>
-            {/* The page itself checks the session (sign-in page when signed out). */}
-            <Button variant="ghost" size="sm" render={<Link href="/compte" />} nativeButton={false}>
-              <UserRoundIcon /> <span className="hidden sm:inline">Mon espace</span>
-              <span className="sr-only sm:hidden">Mon espace</span>
-            </Button>
+            {/* One sign-in for customers and the team; the team reaches its spaces from there. */}
+            <Suspense fallback={<SignInLink />}>
+              <AccountLink />
+            </Suspense>
             <Button size="sm" render={<Link href="/reserver" />} nativeButton={false}>
               Réserver
             </Button>

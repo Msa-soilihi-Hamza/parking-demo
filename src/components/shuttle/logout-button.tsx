@@ -1,8 +1,8 @@
 "use client";
 
 import { Loader2Icon, LogOutIcon } from "lucide-react";
-import { useFormStatus } from "react-dom";
-import { teamLogoutAction } from "@/app/team-actions";
+import { useRouter } from "next/navigation";
+import { useTransition } from "react";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -16,7 +16,8 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
-import type { TeamSpace } from "@/server/team-access";
+import { authClient } from "@/lib/auth-client";
+import type { TeamSpace } from "@/lib/permissions";
 
 const LOST: Record<TeamSpace, string> = {
   navette: "Vous ne verrez plus les demandes des clients sur cet appareil.",
@@ -26,6 +27,8 @@ const LOST: Record<TeamSpace, string> = {
 
 /** "Déconnexion" asks for confirmation first: nobody mid-shift should lose their screen by mistake. */
 export function LogoutButton({ space }: { space: TeamSpace }) {
+  const router = useRouter();
+  const [pending, startTransition] = useTransition();
   return (
     <AlertDialog>
       <AlertDialogTrigger render={<Button variant="outline" size="sm" />}>Déconnexion</AlertDialogTrigger>
@@ -35,28 +38,26 @@ export function LogoutButton({ space }: { space: TeamSpace }) {
             <LogOutIcon />
           </AlertDialogMedia>
           <AlertDialogTitle>Se déconnecter ?</AlertDialogTitle>
-          <AlertDialogDescription>
-            {LOST[space]} Il faudra saisir le code d&apos;accès pour revenir.
-          </AlertDialogDescription>
+          <AlertDialogDescription>{LOST[space]} Il faudra vous reconnecter pour revenir.</AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
           <AlertDialogCancel>Annuler</AlertDialogCancel>
-          <form action={teamLogoutAction}>
-            <input type="hidden" name="space" value={space} />
-            <ConfirmButton />
-          </form>
+          <AlertDialogAction
+            disabled={pending}
+            className="w-full"
+            onClick={() =>
+              startTransition(async () => {
+                await authClient.signOut();
+                router.push("/");
+                router.refresh();
+              })
+            }
+          >
+            {pending && <Loader2Icon className="animate-spin" />}
+            Se déconnecter
+          </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>
-  );
-}
-
-function ConfirmButton() {
-  const { pending } = useFormStatus();
-  return (
-    <AlertDialogAction type="submit" disabled={pending} className="w-full">
-      {pending && <Loader2Icon className="animate-spin" />}
-      Se déconnecter
-    </AlertDialogAction>
   );
 }

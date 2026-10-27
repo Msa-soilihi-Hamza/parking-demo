@@ -7,7 +7,7 @@ const CONTACT = "msahamza738@gmail.com";
 
 export default function PrivacyPage() {
   return (
-    <LegalPage title="Règles de confidentialité" updated="26 octobre 2026">
+    <LegalPage title="Règles de confidentialité" updated="27 octobre 2026">
       <p>
         Escale Parking est un <strong>projet de démonstration</strong> réalisé par Msa Soilihi Hamza, développeur
         web, pour présenter son travail. La marque Escale est fictive : aucun parking réel n&apos;est exploité et
@@ -98,15 +98,22 @@ export default function PrivacyPage() {
 
       <LegalSection title="Combien de temps">
         <p>
-          Votre compte et vos réservations sont gardés tant que vous ne demandez pas leur suppression. Les sessions
-          de connexion expirent d&apos;elles-mêmes. S&apos;agissant d&apos;une démonstration, les données de test
-          peuvent être effacées à tout moment.
+          Votre compte et vos réservations sont gardés tant que vous ne supprimez pas votre compte. Les sessions de
+          connexion expirent d&apos;elles-mêmes. Quand vous supprimez votre compte, vos réservations restent pour la
+          comptabilité (montants et dates) mais ne portent plus votre nom, votre e-mail, votre téléphone ni votre
+          immatriculation. S&apos;agissant d&apos;une démonstration, les données de test peuvent être effacées à
+          tout moment.
         </p>
       </LegalSection>
 
       <LegalSection title="Vos droits">
         <p>
-          Vous pouvez demander à consulter, corriger ou supprimer vos données, ou vous opposer à leur utilisation,
+          Vous pouvez <strong>supprimer votre compte vous-même</strong> depuis{" "}
+          <Link href="/compte">Mon espace</Link> : un e-mail vous demande de confirmer, puis le compte est supprimé
+          (pas pendant un séjour en cours, le compte servant jusqu&apos;à votre retour).
+        </p>
+        <p>
+          Vous pouvez aussi demander à consulter, corriger ou supprimer vos données, ou vous opposer à leur utilisation,
           en écrivant à <a href={`mailto:${CONTACT}`}>{CONTACT}</a>. Vous pouvez aussi adresser une réclamation à la
           CNIL (<a href="https://www.cnil.fr">www.cnil.fr</a>).
         </p>

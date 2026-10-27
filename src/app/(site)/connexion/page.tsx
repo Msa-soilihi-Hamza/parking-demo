@@ -6,13 +6,14 @@ import { SignInPanel } from "@/components/sign-in-panel";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import { homeFor } from "@/lib/permissions";
 import { auth, googleEnabled } from "@/server/auth";
 
 export const metadata = { title: "Connexion · Escale Parking" };
 
-/** Where to go once signed in: a page of this site only, "/compte" by default. */
-function safeNext(value: unknown): string {
-  return typeof value === "string" && value.startsWith("/") && !value.startsWith("//") ? value : "/compte";
+/** The page asked for before signing in: a page of this site only. */
+function safeNext(value: unknown): string | null {
+  return typeof value === "string" && value.startsWith("/") && !value.startsWith("//") ? value : null;
 }
 
 export default function SignInPage(props: PageProps<"/connexion">) {
@@ -29,15 +30,17 @@ async function SignIn({ searchParams }: Pick<PageProps<"/connexion">, "searchPar
   await connection();
   const params = await searchParams;
   const next = safeNext(params.suite);
-  // Already signed in (or just signed in with the code: the page refreshes): go on.
-  if (await auth.api.getSession({ headers: await headers() })) redirect(next);
+  // Already signed in (or just signed in with the code: the page refreshes): back to the
+  // page asked for, otherwise to their space (the team to theirs, customers to "Mon espace").
+  const session = await auth.api.getSession({ headers: await headers() });
+  if (session) redirect(next ?? homeFor(session.user.role));
 
   return (
     <Card>
       <CardHeader>
         <CardTitle className="text-2xl">Connexion</CardTitle>
         <CardDescription>
-          Retrouvez vos réservations. Pas encore de compte ? Il est créé à la première connexion.
+          Clients et équipe, une seule connexion. Pas encore de compte ? Il est créé à la première connexion.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -46,7 +49,8 @@ async function SignIn({ searchParams }: Pick<PageProps<"/connexion">, "searchPar
             <AlertDescription>La connexion avec Google n&apos;a pas abouti. Réessayez, ou recevez un code par e-mail.</AlertDescription>
           </Alert>
         )}
-        <SignInPanel googleEnabled={googleEnabled} callbackURL={next} />
+        {/* Google comes back here, so the same choice of space applies. */}
+        <SignInPanel googleEnabled={googleEnabled} callbackURL={next ?? "/connexion"} />
       </CardContent>
     </Card>
   );

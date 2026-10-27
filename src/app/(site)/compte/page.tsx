@@ -4,17 +4,22 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { connection } from "next/server";
 import { Suspense } from "react";
+import { DeleteAccount } from "@/components/delete-account";
 import { SignOutButton } from "@/components/sign-out-button";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { spacesFor, type TeamSpace } from "@/lib/permissions";
 import { PICKUP_LABELS } from "@/lib/pickup";
 import { formatEuros } from "@/lib/pricing";
 import { formatDateTime } from "@/lib/time";
+import { activeBookingOf } from "@/server/account-deletion";
 import { auth } from "@/server/auth";
 import { listCustomerBookings } from "@/server/bookings";
 
 export const metadata = { title: "Mon espace · Escale Parking" };
+
+const SPACE_NAMES: Record<TeamSpace, string> = { navette: "Navette", accueil: "Accueil", gestion: "Gestion" };
 
 export default function AccountPage() {
   return (
@@ -32,7 +37,11 @@ async function Account() {
   const session = await auth.api.getSession({ headers: await headers() });
   if (!session) redirect("/connexion?suite=/compte");
 
-  const rows = await listCustomerBookings({ userId: session.user.id, email: session.user.email });
+  const [rows, activeReference] = await Promise.all([
+    listCustomerBookings({ userId: session.user.id, email: session.user.email }),
+    activeBookingOf({ id: session.user.id, email: session.user.email }),
+  ]);
+  const teamSpaces = spacesFor(session.user.role);
   const now = new Date();
   // Upcoming: not back yet. Past: the return is done.
   const upcoming = rows.filter(
@@ -52,6 +61,19 @@ async function Account() {
         </div>
         <SignOutButton />
       </div>
+
+      {teamSpaces.length > 0 && (
+        <section className="space-y-3 rounded-xl border p-4">
+          <h2 className="font-medium">Espace équipe</h2>
+          <div className="flex flex-wrap gap-2">
+            {teamSpaces.map((space) => (
+              <Button key={space} variant="outline" size="sm" render={<Link href={`/${space}`} />} nativeButton={false}>
+                {SPACE_NAMES[space]}
+              </Button>
+            ))}
+          </div>
+        </section>
+      )}
 
       <section className="space-y-3">
         <div className="flex items-baseline justify-between gap-3">
@@ -75,6 +97,14 @@ async function Account() {
           <BookingList rows={past} />
         </section>
       )}
+
+      <section className="space-y-3 border-t pt-8">
+        <h2 className="text-lg font-medium">Mes données</h2>
+        <p className="text-sm text-muted-foreground">
+          Ce que nous gardons et pourquoi : <Link href="/confidentialite" className="underline underline-offset-4">règles de confidentialité</Link>.
+        </p>
+        <DeleteAccount email={session.user.email} activeReference={activeReference} />
+      </section>
     </div>
   );
 }
