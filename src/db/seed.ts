@@ -1,6 +1,7 @@
 // Demo data, relative to "now": re-run `npm run db:seed` before showing the demo.
 // Only the demo bookings (reference ESC-DEMO…) are replaced: real bookings made
 // through the site, with their e-mailed links, are never touched.
+import { randomBytes } from "node:crypto";
 import { like, sql } from "drizzle-orm";
 import { quote } from "../lib/pricing";
 import { allSpots } from "../lib/spots";
@@ -147,7 +148,8 @@ async function main() {
 
     rows.push({
       reference: reference(),
-      accessToken: `seed-${counter}-${Math.floor(rand() * 1e9).toString(36)}`,
+      // Random like a real link (never the demo generator): nobody can rebuild it from the code.
+      accessToken: `seed-${counter}-${randomBytes(12).toString("base64url")}`,
       parkingId: parking.id,
       customerName: `${first} ${last}`,
       email: `${first}.${last}@example.com`.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, ""),

@@ -10,6 +10,7 @@ import { Input } from "@/components/ui/input";
 import { InputOTP, InputOTPGroup, InputOTPSlot } from "@/components/ui/input-otp";
 import { Separator } from "@/components/ui/separator";
 import { authClient } from "@/lib/auth-client";
+import { signInEmailSchema } from "@/lib/validation";
 
 type AuthError = { code?: string; status?: number; message?: string } | null;
 
@@ -51,20 +52,25 @@ export function SignInPanel({
   const [info, setInfo] = useState("");
   const [pending, startTransition] = useTransition();
 
-  const sendCode = () =>
+  const sendCode = () => {
+    // Checked here for an instant message; Better Auth checks it again on the server.
+    const parsed = signInEmailSchema.safeParse({ email });
+    if (!parsed.success) return setError(parsed.error.issues[0].message);
     startTransition(async () => {
       setError("");
       setInfo("");
-      const { error } = await authClient.emailOtp.sendVerificationOtp({ email: email.trim(), type: "sign-in" });
+      const { error } = await authClient.emailOtp.sendVerificationOtp({ email: parsed.data.email, type: "sign-in" });
       if (error) return setError(messageFor(error));
       setOtp("");
       setStep("code");
       setInfo("Code envoyé.");
     });
+  };
 
   const verify = (code: string) =>
     startTransition(async () => {
       setError("");
+      if (!/^\d{6}$/.test(code)) return setError("Le code fait 6 chiffres.");
       const { error } = await authClient.signIn.emailOtp({ email: email.trim(), otp: code });
       if (error) {
         setOtp("");
@@ -105,6 +111,7 @@ export function SignInPanel({
             e.preventDefault();
             sendCode();
           }}
+          noValidate
           className="space-y-4"
         >
           <Field>
@@ -113,9 +120,14 @@ export function SignInPanel({
               id="signin-email"
               type="email"
               required
+              maxLength={254}
               autoComplete="email"
+              aria-invalid={step === "email" && Boolean(error)}
               value={email}
-              onChange={(e) => setEmail(e.target.value)}
+              onChange={(e) => {
+                setEmail(e.target.value);
+                setError("");
+              }}
               placeholder="vous@exemple.fr"
             />
             <FieldDescription>Nous vous envoyons un code à 6 chiffres : pas de mot de passe à retenir.</FieldDescription>

@@ -106,6 +106,9 @@ export const bookings = pgTable(
     parkingSpot: text("parking_spot"),
     pickupStatus: pickupStatus("pickup_status").notNull().default("scheduled"),
     bagsReadyAt: timestamp("bags_ready_at", { withTimezone: true }),
+    // How many times "J'ai mes bagages" was pressed (each one alerts every driver):
+    // capped, so a link cannot press and cancel forever.
+    pickupRequests: integer("pickup_requests").notNull().default(0),
     enRouteAt: timestamp("en_route_at", { withTimezone: true }),
     pickedUpAt: timestamp("picked_up_at", { withTimezone: true }),
     paymentMethod: paymentMethod("payment_method").notNull().default("online"),
@@ -152,6 +155,10 @@ export const reviews = pgTable(
 /** Shuttle team devices that accepted push notifications (one row per browser). */
 export const pushSubscriptions = pgTable("push_subscriptions", {
   id: uuid("id").primaryKey().defaultRandom(),
+  // The team member who turned them on: a device only receives while that account still
+  // opens the shuttle space, and goes with the account. Null for devices registered
+  // before this column: they receive nothing until turned on again.
+  userId: text("user_id").references(() => user.id, { onDelete: "cascade" }),
   // The push service URL identifies the device; re-subscribing updates the keys.
   endpoint: text("endpoint").notNull().unique(),
   p256dh: text("p256dh").notNull(),

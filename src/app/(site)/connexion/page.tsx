@@ -7,14 +7,10 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { homeFor } from "@/lib/permissions";
+import { safeNext } from "@/lib/safe-next";
 import { auth, googleEnabled } from "@/server/auth";
 
 export const metadata = { title: "Connexion · Escale Parking" };
-
-/** The page asked for before signing in: a page of this site only. */
-function safeNext(value: unknown): string | null {
-  return typeof value === "string" && value.startsWith("/") && !value.startsWith("//") ? value : null;
-}
 
 export default function SignInPage(props: PageProps<"/connexion">) {
   return (

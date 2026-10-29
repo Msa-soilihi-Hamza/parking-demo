@@ -43,6 +43,11 @@ async function send(to: string | null, subject: string, text: string, html: stri
   await transporter.sendMail({ from: `"Escale Parking" <${user}>`, to, subject, text, html, attachments });
 }
 
+/** Text from a form or the database, inside the e-mail's HTML: never read as markup. */
+export function escapeHtml(value: string): string {
+  return value.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
+}
+
 function layout(content: string) {
   return `<div style="font-family:Arial,sans-serif;max-width:480px;margin:0 auto;padding:24px;color:#171717">
   <p style="font-weight:bold;margin:0 0 24px">● Escale</p>
@@ -71,7 +76,7 @@ export async function sendPickupRequestReceived(booking: Booking, terminal: stri
     `L'équipe navette a bien reçu votre demande. Rendez-vous au point navette du terminal ${terminal}.\n` +
       `Suivez l'arrivée de la navette ici : ${link}\nUn imprévu ? Appelez le ${SUPPORT_PHONE}, 24h/24.`,
     layout(`<p><strong>L'équipe navette a bien reçu votre demande.</strong></p>
-  <p>Rendez-vous au point navette du <strong>terminal ${terminal}</strong> : un chauffeur part vous chercher.</p>
+  <p>Rendez-vous au point navette du <strong>terminal ${escapeHtml(terminal)}</strong> : un chauffeur part vous chercher.</p>
   <p><a href="${link}" style="display:inline-block;background:#b91c1c;color:#fff;padding:12px 20px;border-radius:8px;text-decoration:none">Suivre la navette</a></p>
   <p style="color:#737373">Appuyé par erreur ? Vous pouvez annuler depuis ce lien tant que la navette n'est pas partie. Un imprévu ? ${SUPPORT_PHONE}, 24h/24.</p>`),
   );
@@ -113,10 +118,10 @@ export async function sendWalkInConfirmation(booking: Booking, parking: Parking)
     `Votre véhicule ${booking.plate} est garé au ${parking.name}, place ${booking.parkingSpot}.\n` +
       `Payé sur place : ${formatEuros(booking.priceCents)}. Retour prévu ${formatDateTime(booking.returnAt)}.\n` +
       `À votre retour, ouvrez ce lien et appuyez sur « J'ai mes bagages » : ${link}`,
-    layout(`<p>Votre véhicule <strong>${booking.plate}</strong> est garé, place <strong style="font-family:monospace">${booking.parkingSpot}</strong>.</p>
+    layout(`<p>Votre véhicule <strong>${escapeHtml(booking.plate)}</strong> est garé, place <strong style="font-family:monospace">${escapeHtml(booking.parkingSpot ?? "")}</strong>.</p>
   <table style="width:100%;font-size:14px;margin:16px 0;border-collapse:collapse">
-    <tr><td style="color:#737373;padding:4px 0">Référence</td><td style="font-family:monospace">${booking.reference}</td></tr>
-    <tr><td style="color:#737373;padding:4px 0">Parking</td><td>${parking.name}</td></tr>
+    <tr><td style="color:#737373;padding:4px 0">Référence</td><td style="font-family:monospace">${escapeHtml(booking.reference)}</td></tr>
+    <tr><td style="color:#737373;padding:4px 0">Parking</td><td>${escapeHtml(parking.name)}</td></tr>
     <tr><td style="color:#737373;padding:4px 0">Atterrissage retour</td><td>${formatDateTime(booking.returnAt)}</td></tr>
     <tr><td style="color:#737373;padding:4px 0">Payé sur place</td><td>${formatEuros(booking.priceCents)}</td></tr>
   </table>
@@ -136,9 +141,9 @@ export async function sendBookingConfirmation(booking: Booking, parking: Parking
       `${parking.name}, dépôt ${formatDateTime(booking.dropoffAt)}, retour ${formatDateTime(booking.returnAt)}.\n` +
       `À l'arrivée au parking, présentez le QR code de cet e-mail ou la référence ${booking.reference} à l'accueil.\n` +
       `À votre retour, ouvrez ce lien et appuyez sur « J'ai mes bagages » : ${link}`,
-    layout(`<p>Votre réservation <strong>${booking.reference}</strong> est confirmée.</p>
+    layout(`<p>Votre réservation <strong>${escapeHtml(booking.reference)}</strong> est confirmée.</p>
   <table style="width:100%;font-size:14px;margin:16px 0;border-collapse:collapse">
-    <tr><td style="color:#737373;padding:4px 0">Parking</td><td>${parking.name}</td></tr>
+    <tr><td style="color:#737373;padding:4px 0">Parking</td><td>${escapeHtml(parking.name)}</td></tr>
     <tr><td style="color:#737373;padding:4px 0">Dépôt</td><td>${formatDateTime(booking.dropoffAt)}</td></tr>
     <tr><td style="color:#737373;padding:4px 0">Atterrissage retour</td><td>${formatDateTime(booking.returnAt)}</td></tr>
     ${booking.discountCents > 0 ? `<tr><td style="color:#737373;padding:4px 0">Code promo</td><td>-${formatEuros(booking.discountCents)} (déduit)</td></tr>` : ""}
@@ -146,8 +151,8 @@ export async function sendBookingConfirmation(booking: Booking, parking: Parking
   </table>
   <div style="text-align:center;border:1px solid #e5e5e5;border-radius:12px;padding:16px;margin:16px 0">
     <p style="margin:0 0 8px;font-weight:bold">À l'arrivée au parking</p>
-    <img src="cid:arrival-qr" width="160" height="160" alt="QR code de la réservation ${booking.reference}" />
-    <p style="margin:8px 0 0;color:#737373;font-size:13px">Présentez ce QR code à l'accueil, ou donnez la référence <strong style="color:#171717;font-family:monospace">${booking.reference}</strong>.</p>
+    <img src="cid:arrival-qr" width="160" height="160" alt="QR code de la réservation ${escapeHtml(booking.reference)}" />
+    <p style="margin:8px 0 0;color:#737373;font-size:13px">Présentez ce QR code à l'accueil, ou donnez la référence <strong style="color:#171717;font-family:monospace">${escapeHtml(booking.reference)}</strong>.</p>
   </div>
   <p>À votre retour, ouvrez votre réservation et appuyez sur « J'ai mes bagages » : la navette vient vous chercher. Un imprévu ? Appelez le ${SUPPORT_PHONE}, 24h/24.</p>
   <p><a href="${link}" style="display:inline-block;background:#b91c1c;color:#fff;padding:12px 20px;border-radius:8px;text-decoration:none">Ouvrir ma réservation</a></p>`),

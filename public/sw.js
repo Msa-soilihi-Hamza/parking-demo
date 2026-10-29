@@ -20,7 +20,9 @@ self.addEventListener("push", (event) => {
 
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
-  const target = new URL(event.notification.data?.url || "/navette", self.location.origin).href;
+  // Only a page of this site: an absolute URL to another site falls back to the shuttle page.
+  const url = new URL(event.notification.data?.url || "/navette", self.location.origin);
+  const target = url.origin === self.location.origin ? url.href : new URL("/navette", self.location.origin).href;
   event.waitUntil(
     self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((windows) => {
       // Reuse an open shuttle tab if there is one, otherwise open a new window.

@@ -23,6 +23,7 @@ vi.mock("./mailer", () => ({
 
 const { auth } = await import("./auth");
 const { activeBookingOf } = await import("./account-deletion");
+const { CODES_PER_HOUR } = await import("./otp-budget");
 
 const email = `auth.${String(Date.now()).slice(-8)}@example.com`;
 const lastCode = () => sent.codes.filter((c) => c.to === email).at(-1)!.code;
@@ -58,6 +59,24 @@ describe("sign-in with a code sent by e-mail", () => {
       await auth.api.signInEmailOTP({ body: { email, otp: wrong } }).catch(() => {});
     }
     await expect(auth.api.signInEmailOTP({ body: { email, otp: right } })).rejects.toThrow();
+  });
+
+  it("caps the codes per address, whatever the IP, so the 5 tries per code cannot be renewed forever", async () => {
+    const capped = `cap.${String(Date.now()).slice(-8)}@example.com`;
+    for (let i = 0; i < CODES_PER_HOUR; i++) {
+      await auth.api.sendVerificationOTP({ body: { email: capped, type: "sign-in" } });
+    }
+    await expect(auth.api.sendVerificationOTP({ body: { email: capped, type: "sign-in" } })).rejects.toThrow(
+      /Trop de codes/,
+    );
+    expect(sent.codes.filter((c) => c.to === capped)).toHaveLength(CODES_PER_HOUR);
+    await db.execute(sql`delete from rate_limit where key = ${`otp-email:${capped}`}`);
+  });
+
+  it("sends no code other than the sign-in one (no password reset on this site)", async () => {
+    await expect(
+      auth.api.sendVerificationOTP({ body: { email, type: "forget-password" } }),
+    ).rejects.toThrow();
   });
 
   it("stores only a hash of the code, never the code itself", async () => {
@@ -139,7 +158,7 @@ describe("deleting an account from Mon espace", () => {
   });
 
   it("does not count a payment abandoned long ago as a stay under way", async () => {
-    const owner = { id: `abandon-${tag}`, email: `abandon.${tag}@example.com` };
+    const owner = { id: `abandon-${tag}`, email: `abandon.${tag}@example.com`, emailVerified: true };
     await db.insert(bookings).values({
       ...booking("x", owner.email, new Date(Date.now() + 5 * 24 * 3600 * 1000), "scheduled"),
       reference: `ESC-ABN${tag}`,

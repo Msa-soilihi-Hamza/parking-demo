@@ -30,6 +30,18 @@ export function appUrl() {
   });
 }
 
+/**
+ * Before a retry: the previous Checkout session must not stay payable next to the new
+ * one. Returns "paid" if the customer did pay it in the meantime.
+ */
+export async function closeCheckoutSession(sessionId: string): Promise<"paid" | "closed"> {
+  const stripe = getStripe();
+  const session = await stripe.checkout.sessions.retrieve(sessionId);
+  if (session.status === "complete" && session.payment_status === "paid") return "paid";
+  if (session.status === "open") await stripe.checkout.sessions.expire(sessionId);
+  return "closed";
+}
+
 export async function createCheckoutSession(booking: Booking, parking: Parking) {
   return getStripe().checkout.sessions.create({
     mode: "payment",

@@ -25,8 +25,10 @@ export async function POST(request: Request) {
   }
 
   if (event.type === "checkout.session.expired") {
-    const bookingId = event.data.object.metadata?.bookingId;
-    if (bookingId) await releaseHold(bookingId);
+    const session = event.data.object;
+    const bookingId = session.metadata?.bookingId;
+    // Only frees the spot if it is the booking's current session (not one replaced by a retry).
+    if (bookingId) await releaseHold(bookingId, session.id);
   }
 
   return Response.json({ received: true });

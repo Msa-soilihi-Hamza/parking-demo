@@ -5,7 +5,7 @@ import { after } from "next/server";
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { bookings } from "@/db/schema";
-import { PICKUP_STATUSES, type PickupStatus } from "@/lib/pickup";
+import { advancePickupSchema, parseForm, pushEndpointSchema, pushSubscriptionSchema } from "@/lib/validation";
 import { advancePickup } from "@/server/bookings";
 import { sendReviewRequest } from "@/server/mailer";
 import {
@@ -14,41 +14,46 @@ import {
   saveSubscription,
   type SubscriptionInput,
 } from "@/server/push";
-import { hasAccess } from "@/server/team-access";
+import { hasAccess, teamMember } from "@/server/team-access";
 
-/** Registers this device for push notifications (shuttle team only). */
+/** Registers this device for push notifications, as the signed-in driver's (shuttle team only). */
 export async function subscribePushAction(sub: SubscriptionInput) {
-  if (!(await hasAccess("navette"))) throw new Error("Accès refusé.");
-  if (!sub?.endpoint?.startsWith("https://") || !sub.keys?.p256dh || !sub.keys?.auth) {
-    throw new Error("Abonnement invalide.");
-  }
-  await saveSubscription(sub);
+  const member = await teamMember("navette");
+  if (!member) throw new Error("Accès refusé.");
+  const parsed = pushSubscriptionSchema.safeParse(sub);
+  if (!parsed.success) throw new Error("Abonnement invalide.");
+  await saveSubscription(parsed.data, member.id);
 }
 
+/** Turns off this device: only one of the driver's own. Also called on sign-out. */
 export async function unsubscribePushAction(endpoint: string) {
-  if (!(await hasAccess("navette"))) throw new Error("Accès refusé.");
-  await deleteSubscription(endpoint);
+  const member = await teamMember("navette");
+  if (!member) return;
+  const parsed = pushEndpointSchema.safeParse(endpoint);
+  if (!parsed.success) return;
+  await deleteSubscription(parsed.data, member.id);
 }
 
-/** Lets a driver check that notifications reach this device. */
+/** Lets a driver check that notifications reach their device (sent to them only). */
 export async function sendTestPushAction() {
-  if (!(await hasAccess("navette"))) throw new Error("Accès refusé.");
-  return notifyShuttleTeam({
-    title: "Notifications activées",
-    body: "Vous serez prévenu dès qu'un client a récupéré ses bagages.",
-    url: "/navette",
-    tag: "test",
-  });
+  const member = await teamMember("navette");
+  if (!member) throw new Error("Accès refusé.");
+  return notifyShuttleTeam(
+    {
+      title: "Notifications activées",
+      body: "Vous serez prévenu dès qu'un client a récupéré ses bagages.",
+      url: "/navette",
+      tag: "test",
+    },
+    { onlyUserId: member.id },
+  );
 }
 
 export async function advancePickupAction(formData: FormData) {
   if (!(await hasAccess("navette"))) throw new Error("Accès refusé.");
-  const id = String(formData.get("id") ?? "");
-  const from = String(formData.get("from")) as PickupStatus;
-  const to = String(formData.get("to")) as PickupStatus;
-  if (!PICKUP_STATUSES.includes(from) || !PICKUP_STATUSES.includes(to)) {
-    throw new Error("Statut invalide.");
-  }
+  const form = parseForm(advancePickupSchema, formData);
+  if (!form.ok) throw new Error("Statut invalide.");
+  const { id, from, to } = form.data;
   const moved = await advancePickup({ id }, from, to);
 
   // Once the customer is in the shuttle, ask for a review (after the response).

@@ -2,14 +2,16 @@
 
 import { refresh } from "next/cache";
 import { after } from "next/server";
-import { advancePickup, cancelPickupRequest, getBookingByToken } from "@/server/bookings";
+import { advancePickup, cancelPickupRequest, getBookingByToken, MAX_PICKUP_REQUESTS } from "@/server/bookings";
 import { sendPickupRequestReceived } from "@/server/mailer";
 import { bagsReadyNotification, notifyShuttleTeam, pickupCancelledNotification } from "@/server/push";
 import { submitReview } from "@/server/reviews";
+import { bagsReadySchema, cancelPickupSchema, parseForm, reviewSchema } from "@/lib/validation";
 
 export async function markBagsReadyAction(formData: FormData) {
-  const token = String(formData.get("token") ?? "");
-  const terminal = String(formData.get("terminal") ?? "");
+  const form = parseForm(bagsReadySchema, formData);
+  if (!form.ok) throw new Error("Réservation introuvable.");
+  const { token, terminal } = form.data;
 
   // The secret token in the link is the customer's only credential.
   const found = await getBookingByToken(token);
@@ -21,6 +23,9 @@ export async function markBagsReadyAction(formData: FormData) {
   const sent = await advancePickup({ accessToken: token }, "scheduled", "bags_ready", {
     returnTerminal: terminal,
   });
+  if (!sent && booking.pickupStatus === "scheduled" && booking.pickupRequests >= MAX_PICKUP_REQUESTS) {
+    throw new Error("Trop de demandes pour cette réservation : appelez-nous pour qu'on vienne vous chercher.");
+  }
 
   // The push to the drivers and the customer's e-mail go out after the response,
   // so the page updates at once; one failing does not stop the other.
@@ -48,19 +53,19 @@ export async function markBagsReadyAction(formData: FormData) {
 export type ReviewFormState = { error?: string };
 
 export async function submitReviewAction(_prev: ReviewFormState, formData: FormData): Promise<ReviewFormState> {
-  const result = await submitReview({
-    accessToken: String(formData.get("token") ?? ""),
-    rating: Number(formData.get("rating")),
-    comment: String(formData.get("comment") ?? "") || null,
-    publishConsent: formData.get("publishConsent") === "on",
-  });
+  const form = parseForm(reviewSchema, formData);
+  if (!form.ok) return { error: form.fieldErrors.rating ?? form.fieldErrors.comment ?? "Réservation introuvable." };
+  const { token, rating, comment, publishConsent } = form.data;
+  const result = await submitReview({ accessToken: token, rating, comment, publishConsent });
   if (!result.ok) return { error: result.error };
   refresh();
   return {};
 }
 
 export async function cancelPickupRequestAction(formData: FormData) {
-  const token = String(formData.get("token") ?? "");
+  const form = parseForm(cancelPickupSchema, formData);
+  if (!form.ok) throw new Error("Réservation introuvable.");
+  const { token } = form.data;
   const found = await getBookingByToken(token);
   const cancelled = await cancelPickupRequest(token);
 

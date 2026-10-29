@@ -2,6 +2,9 @@
 // limited number of bookings or not. Pure rules; the use count is checked on the
 // server, under lock, when the spot is held.
 
+/** A code is valid for at most a year from the day it is created. */
+export const MAX_VALIDITY_DAYS = 365;
+
 export type PromoKind = "percent" | "amount";
 
 export type PromoRule = {

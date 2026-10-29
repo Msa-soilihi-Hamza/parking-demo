@@ -2,6 +2,14 @@ import { describe, expect, it } from "vitest";
 import { dateToParisLocal, parisDayBounds, parisLocalToDate } from "./time";
 
 describe("parisLocalToDate", () => {
+  it("refuses dates that do not exist", () => {
+    expect(parisLocalToDate("2026-13-01T08:00")).toBeNull();
+    expect(parisLocalToDate("2026-02-30T08:00")).toBeNull();
+    expect(parisLocalToDate("2026-11-02T24:00")).toBeNull();
+    expect(parisLocalToDate("2026-11-02T08:60")).toBeNull();
+    expect(parisLocalToDate("2028-02-29T08:00")).not.toBeNull();
+  });
+
   it("handles winter time (UTC+1)", () => {
     expect(parisLocalToDate("2026-12-10T14:30")?.toISOString()).toBe("2026-12-10T13:30:00.000Z");
   });

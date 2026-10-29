@@ -1,16 +1,13 @@
-import { and, eq, gt, ne, or, sql } from "drizzle-orm";
+import { and, eq, gt, ne, or } from "drizzle-orm";
 import { db } from "@/db";
 import { bookings } from "@/db/schema";
-import { PAYMENT_HOLD_MINUTES } from "@/server/bookings";
+import { HOLD_COUNTED_MINUTES, ownedBy, type Owner } from "@/server/bookings";
 
 // A customer deletes their account ("Mon espace"). Better Auth deletes the account,
 // its sessions and sign-in methods; these rules decide when it is allowed and what
-// happens to the bookings.
+// happens to the bookings. Same bookings as "Mon espace" (ownedBy).
 
-type Owner = { id: string; email: string };
-
-const ofOwner = (owner: Owner) =>
-  or(eq(bookings.userId, owner.id), sql`lower(${bookings.email}) = ${owner.email.toLowerCase()}`);
+const ofOwner = ownedBy;
 
 /**
  * A stay still under way (spot held for payment, car not back yet): the account is
@@ -28,7 +25,7 @@ export async function activeBookingOf(owner: Owner, now = new Date()): Promise<s
           eq(bookings.status, "confirmed"),
           and(
             eq(bookings.status, "pending_payment"),
-            gt(bookings.heldAt, new Date(now.getTime() - PAYMENT_HOLD_MINUTES * 60 * 1000)),
+            gt(bookings.heldAt, new Date(now.getTime() - HOLD_COUNTED_MINUTES * 60 * 1000)),
           ),
         ),
         ne(bookings.pickupStatus, "picked_up"),

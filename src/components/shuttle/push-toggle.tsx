@@ -23,7 +23,31 @@ function detectStatus(): Promise<Status> | Status {
   if (Notification.permission === "denied") return "denied";
   return registerWorker()
     .then((registration) => registration.pushManager.getSubscription())
-    .then((sub): Status => (sub ? "on" : "off"));
+    .then((sub): Status => {
+      if (sub) linkToMe(sub);
+      return sub ? "on" : "off";
+    });
+}
+
+// A device already turned on is (re)attached to the driver signed in now: devices turned
+// on before subscriptions had an owner start receiving again, once per page.
+let linked = false;
+function linkToMe(sub: PushSubscription) {
+  if (linked) return;
+  linked = true;
+  subscribePushAction(JSON.parse(JSON.stringify(sub))).catch(() => {
+    linked = false;
+  });
+}
+
+/** On sign-out: this device stops receiving the team's notifications. */
+export async function forgetThisDevice() {
+  if (!("serviceWorker" in navigator)) return;
+  const registration = await navigator.serviceWorker.getRegistration("/");
+  const sub = await registration?.pushManager.getSubscription();
+  if (!sub) return;
+  await unsubscribePushAction(sub.endpoint).catch(() => {});
+  await sub.unsubscribe();
 }
 
 // Registered once per page: status checks run again on every return to the tab.

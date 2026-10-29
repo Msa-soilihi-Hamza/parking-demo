@@ -6,7 +6,10 @@ import { createPromoCodeAction, type PromoFormState } from "@/app/gestion/action
 import { Button } from "@/components/ui/button";
 import { Field, FieldDescription, FieldError, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import { useFormValidation } from "@/components/use-form-validation";
+import { MAX_VALIDITY_DAYS } from "@/lib/promo";
 import { cn } from "@/lib/utils";
+import { promoCodeSchema } from "@/lib/validation";
 
 const DURATION_PRESETS = [7, 30, 90];
 
@@ -25,16 +28,20 @@ const lastDay = new Intl.DateTimeFormat("fr-FR", {
 export function PromoCodeForm({ now }: { now: number }) {
   const [state, formAction, pending] = useActionState<PromoFormState, FormData>(createPromoCodeAction, {});
   const typed = (name: string, fallback = "") => state.values?.[name] ?? fallback;
-  const fieldError = (name: string) =>
-    state.fieldErrors?.[name] ? <FieldError>{state.fieldErrors[name]}</FieldError> : null;
+  const check = useFormValidation(promoCodeSchema, state.fieldErrors);
+  const fieldError = (name: string) => {
+    const message = check.errorFor(name);
+    return message ? <FieldError>{message}</FieldError> : null;
+  };
+  const invalid = (name: string) => Boolean(check.errorFor(name));
 
   const [kind, setKind] = useState<"percent" | "amount">(typed("kind", "percent") === "amount" ? "amount" : "percent");
   const [days, setDays] = useState(typed("validDays", "30"));
   const dayCount = Number(days);
-  const validDays = Number.isInteger(dayCount) && dayCount >= 1 && dayCount <= 365;
+  const validDays = Number.isInteger(dayCount) && dayCount >= 1 && dayCount <= MAX_VALIDITY_DAYS;
 
   return (
-    <form action={formAction} className="space-y-6">
+    <form action={formAction} onSubmit={check.onSubmit} onInput={check.onInput} noValidate className="space-y-6">
       {state.created && (
         <p className="flex items-center gap-2 rounded-lg bg-emerald-50 dark:bg-emerald-500/15 px-4 py-3 text-sm text-emerald-800 dark:text-emerald-200">
           <CircleCheckIcon className="size-4" /> Code <span className="font-mono font-semibold">{state.created}</span> créé :
@@ -50,6 +57,7 @@ export function PromoCodeForm({ now }: { now: number }) {
             name="code"
             required
             maxLength={20}
+            aria-invalid={invalid("code")}
             placeholder="NOEL15"
             defaultValue={state.created ? "" : typed("code")}
             autoCapitalize="characters"
@@ -87,11 +95,23 @@ export function PromoCodeForm({ now }: { now: number }) {
                 name="percent"
                 inputMode="numeric"
                 required
+                maxLength={3}
+                aria-invalid={invalid("percent")}
                 placeholder="15"
                 defaultValue={typed("percent")}
               />
             ) : (
-              <Input key="amount" id="amount" name="amount" inputMode="decimal" required placeholder="5,00" defaultValue={typed("amount")} />
+              <Input
+                key="amount"
+                id="amount"
+                name="amount"
+                inputMode="decimal"
+                required
+                maxLength={7}
+                aria-invalid={invalid("amount")}
+                placeholder="5,00"
+                defaultValue={typed("amount")}
+              />
             )}
           </div>
           <FieldDescription>{kind === "percent" ? "Pourcentage du prix, de 1 à 100." : "Montant en euros déduit du prix."}</FieldDescription>
@@ -107,6 +127,8 @@ export function PromoCodeForm({ now }: { now: number }) {
                 name="validDays"
                 inputMode="numeric"
                 required
+                maxLength={3}
+                aria-invalid={invalid("validDays")}
                 value={days}
                 onChange={(e) => setDays(e.target.value)}
                 className="w-20"
@@ -128,21 +150,38 @@ export function PromoCodeForm({ now }: { now: number }) {
           <FieldDescription className="first-letter:uppercase">
             {validDays
               ? `À partir d'aujourd'hui, jusqu'au ${lastDay.format(new Date(now + (dayCount - 1) * 86_400_000))} inclus.`
-              : "De 1 à 365 jours."}
+              : `De 1 à ${MAX_VALIDITY_DAYS} jours.`}
           </FieldDescription>
           {fieldError("validDays")}
         </Field>
 
         <Field>
           <FieldLabel htmlFor="maxUses">Nombre d&apos;utilisations (facultatif)</FieldLabel>
-          <Input id="maxUses" name="maxUses" inputMode="numeric" placeholder="Illimité" defaultValue={typed("maxUses")} className="w-32" />
+          <Input
+            id="maxUses"
+            name="maxUses"
+            inputMode="numeric"
+            maxLength={6}
+            aria-invalid={invalid("maxUses")}
+            placeholder="Illimité"
+            defaultValue={typed("maxUses")}
+            className="w-32"
+          />
           <FieldDescription>Par exemple 50 pour une offre limitée. Vide : illimité.</FieldDescription>
           {fieldError("maxUses")}
         </Field>
 
         <Field className="sm:col-span-2">
           <FieldLabel htmlFor="description">Note interne (facultatif)</FieldLabel>
-          <Input id="description" name="description" maxLength={80} placeholder="Vacances de Noël" defaultValue={typed("description")} />
+          <Input
+            id="description"
+            name="description"
+            maxLength={80}
+            aria-invalid={invalid("description")}
+            placeholder="Vacances de Noël"
+            defaultValue={typed("description")}
+          />
+          {fieldError("description")}
         </Field>
       </div>
 

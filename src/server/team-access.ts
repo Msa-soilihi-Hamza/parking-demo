@@ -19,6 +19,11 @@ export async function teamSession() {
 
 /** Checked on every team page and action: signed in, with a role that opens this space. */
 export async function hasAccess(space: TeamSpace): Promise<boolean> {
+  return (await teamMember(space)) !== null;
+}
+
+/** The signed-in team member, if their role opens this space; otherwise null. */
+export async function teamMember(space: TeamSpace) {
   const session = await teamSession();
-  return Boolean(session && spacesFor(session.user.role).includes(space));
+  return session && spacesFor(session.user.role).includes(space) ? session.user : null;
 }

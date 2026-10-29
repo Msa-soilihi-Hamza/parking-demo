@@ -1,7 +1,8 @@
-import { inArray } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import webpush from "web-push";
 import { db } from "@/db";
-import { pushSubscriptions } from "@/db/schema";
+import { pushSubscriptions, user } from "@/db/schema";
+import { spacesFor } from "@/lib/permissions";
 
 // Web Push to the shuttle team's devices. Free and standard (VAPID keys); works on
 // Android, desktop browsers, and iPhone once the site is added to the home screen.
@@ -25,27 +26,45 @@ function configure(): boolean {
 
 export type SubscriptionInput = { endpoint: string; keys: { p256dh: string; auth: string } };
 
-export async function saveSubscription(sub: SubscriptionInput) {
+/** This device now belongs to this team member (re-subscribing moves it to them). */
+export async function saveSubscription(sub: SubscriptionInput, userId: string) {
   await db
     .insert(pushSubscriptions)
-    .values({ endpoint: sub.endpoint, p256dh: sub.keys.p256dh, auth: sub.keys.auth })
+    .values({ userId, endpoint: sub.endpoint, p256dh: sub.keys.p256dh, auth: sub.keys.auth })
     .onConflictDoUpdate({
       target: pushSubscriptions.endpoint,
-      set: { p256dh: sub.keys.p256dh, auth: sub.keys.auth },
+      set: { userId, p256dh: sub.keys.p256dh, auth: sub.keys.auth },
     });
 }
 
-export async function deleteSubscription(endpoint: string) {
-  await db.delete(pushSubscriptions).where(inArray(pushSubscriptions.endpoint, [endpoint]));
+/** Only the team member's own device: nobody turns off a colleague's notifications. */
+export async function deleteSubscription(endpoint: string, userId: string) {
+  await db
+    .delete(pushSubscriptions)
+    .where(and(eq(pushSubscriptions.endpoint, endpoint), eq(pushSubscriptions.userId, userId)));
 }
 
-/** Sends to every registered device and forgets the ones the push service says are gone. */
-export async function notifyShuttleTeam(payload: PushPayload): Promise<{ sent: number; removed: number }> {
+/**
+ * Sends to the devices of the people who open the shuttle space right now (role checked
+ * at each send: a removed or banned driver gets nothing), or only to one person's devices.
+ * Forgets the devices the push service says are gone.
+ */
+export async function notifyShuttleTeam(
+  payload: PushPayload,
+  { onlyUserId }: { onlyUserId?: string } = {},
+): Promise<{ sent: number; removed: number }> {
   if (!configure()) {
     console.info("[push] VAPID keys missing: notification skipped");
     return { sent: 0, removed: 0 };
   }
-  const subscriptions = await db.select().from(pushSubscriptions);
+  const rows = await db
+    .select({ subscription: pushSubscriptions, role: user.role, banned: user.banned })
+    .from(pushSubscriptions)
+    .innerJoin(user, eq(pushSubscriptions.userId, user.id))
+    .where(onlyUserId ? eq(pushSubscriptions.userId, onlyUserId) : undefined);
+  const subscriptions = rows
+    .filter((r) => !r.banned && spacesFor(r.role).includes("navette"))
+    .map((r) => r.subscription);
   const gone: string[] = [];
   let sent = 0;
 

@@ -38,8 +38,8 @@ async function Account() {
   if (!session) redirect("/connexion?suite=/compte");
 
   const [rows, activeReference] = await Promise.all([
-    listCustomerBookings({ userId: session.user.id, email: session.user.email }),
-    activeBookingOf({ id: session.user.id, email: session.user.email }),
+    listCustomerBookings(session.user),
+    activeBookingOf(session.user),
   ]);
   const teamSpaces = spacesFor(session.user.role);
   const now = new Date();

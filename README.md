@@ -39,6 +39,11 @@ Pour tester sans réserver :
 ## Choix techniques
 
 - **Next.js 16 (App Router, Server Actions), TypeScript, Tailwind CSS, shadcn/ui.**
+- **Validation de toutes les saisies avec [Zod](https://zod.dev/)** (`src/lib/validation.ts`) : un schéma par
+  formulaire, partagé par le navigateur (erreurs affichées tout de suite, rien n'est envoyé) et par les Server
+  Actions (le contrôle qui compte, puisqu'une action peut être appelée sans passer par la page). Longueurs
+  maximales partout, caractères invisibles refusés, identifiants et jetons vérifiés avant la base, valeurs
+  échappées dans le HTML des e-mails, en-têtes de sécurité HTTP (`next.config.ts`).
 - **Comptes (clients et équipe) avec [Better Auth](https://www.better-auth.com/docs)**, configurés d'après sa
   documentation officielle (`src/server/auth.ts`) : module **Email OTP** (code à 6 chiffres, valable
   10 minutes, 5 essais, **stocké haché**, sans mot de passe, compte créé à la première connexion) et
@@ -173,6 +178,7 @@ npm test
 
 - Tarification (paliers, arrondis, limites, codes promo, prix minimum), validité des codes en jours (heure de Paris)
 - Rôles de l'équipe : espaces ouverts par rôle (client, chauffeur, accueil, responsable, rôles cumulés, rôle inconnu), page d'arrivée après connexion, vérification par Better Auth, nouveau compte toujours client
+- Validation des formulaires : noms accentués acceptés, balises, caractères invisibles et textes trop longs refusés, téléphone, plaque, dates impossibles (30 février), e-mail facultatif, abonnements push en HTTPS seulement
 - Fuseau horaire de Paris (heure d'été, d'hiver, nuit du changement)
 - Machine à états du retour
 - Connexion par code e-mail avec la vraie instance Better Auth (envoi, création du compte et de la session, mauvais code refusé, code invalidé après 5 essais, code stocké haché), et suppression du compte (lien de confirmation, réservations anonymisées, refus pendant un séjour en cours)

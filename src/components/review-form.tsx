@@ -7,13 +7,16 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Field, FieldLabel } from "@/components/ui/field";
 import { Textarea } from "@/components/ui/textarea";
+import { useFormValidation } from "@/components/use-form-validation";
 import { cn } from "@/lib/utils";
+import { REVIEW_MAX_LENGTH as MAX_LENGTH, reviewSchema } from "@/lib/validation";
 
 const LABELS = ["", "Très déçu", "Déçu", "Correct", "Bien", "Parfait"];
-const MAX_LENGTH = 500;
 
 export function ReviewForm({ token }: { token: string }) {
   const [state, formAction, pending] = useActionState<ReviewFormState, FormData>(submitReviewAction, {});
+  const check = useFormValidation(reviewSchema);
+  const error = check.errorFor("rating") ?? check.errorFor("comment") ?? state.error;
   const [rating, setRating] = useState(0);
   const [hover, setHover] = useState(0);
   const [comment, setComment] = useState("");
@@ -21,7 +24,7 @@ export function ReviewForm({ token }: { token: string }) {
   const shown = hover || rating;
 
   return (
-    <form action={formAction} className="space-y-5">
+    <form action={formAction} onSubmit={check.onSubmit} onInput={check.onInput} noValidate className="space-y-5">
       <input type="hidden" name="token" value={token} />
       <input type="hidden" name="rating" value={rating} />
       {consent && <input type="hidden" name="publishConsent" value="on" />}
@@ -57,6 +60,7 @@ export function ReviewForm({ token }: { token: string }) {
           name="comment"
           rows={3}
           maxLength={MAX_LENGTH}
+          aria-invalid={Boolean(check.errorFor("comment"))}
           value={comment}
           onChange={(e) => setComment(e.target.value)}
           placeholder="La navette, l'attente, l'accueil…"
@@ -73,7 +77,7 @@ export function ReviewForm({ token }: { token: string }) {
         </span>
       </label>
 
-      {state.error && <p className="text-sm text-destructive">{state.error}</p>}
+      {error && <p className="text-sm text-destructive">{error}</p>}
 
       <Button type="submit" size="lg" disabled={pending || rating === 0} className="w-full">
         {pending && <Loader2Icon className="animate-spin" />}

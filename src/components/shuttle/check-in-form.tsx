@@ -7,6 +7,8 @@ import { checkInVehicleAction, type CheckInState } from "@/app/accueil/actions";
 import { Button } from "@/components/ui/button";
 import { Field, FieldDescription, FieldError, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import { useFormValidation } from "@/components/use-form-validation";
+import { checkInSchema } from "@/lib/validation";
 
 /**
  * "Véhicule déposé": the first free spot is already filled in, the agent can change it.
@@ -22,8 +24,10 @@ export function CheckInForm({
   planHref: string;
 }) {
   const [state, formAction, pending] = useActionState<CheckInState, FormData>(checkInVehicleAction, {});
+  const check = useFormValidation(checkInSchema, state.error ? { spot: state.error } : undefined);
+  const error = check.errorFor("spot") ?? check.errorFor("reference");
   return (
-    <form action={formAction} className="space-y-4">
+    <form action={formAction} onSubmit={check.onSubmit} onInput={check.onInput} noValidate className="space-y-4">
       <input type="hidden" name="reference" value={reference} />
       <Field>
         <FieldLabel htmlFor="spot">Place de parking</FieldLabel>
@@ -39,6 +43,7 @@ export function CheckInForm({
           spellCheck={false}
           required
           maxLength={8}
+          aria-invalid={Boolean(error)}
           className="h-12 max-w-40 font-mono text-lg uppercase"
         />
         <FieldDescription>
@@ -47,7 +52,7 @@ export function CheckInForm({
             Voir le plan
           </Link>
         </FieldDescription>
-        {state.error && <FieldError>{state.error}</FieldError>}
+        {error && <FieldError>{error}</FieldError>}
       </Field>
       <Button type="submit" size="lg" className="h-12 w-full sm:w-auto" disabled={pending}>
         {pending ? <Loader2Icon className="animate-spin" /> : <CarIcon />}

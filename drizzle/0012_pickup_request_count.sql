@@ -1,0 +1,1 @@
+ALTER TABLE "bookings" ADD COLUMN "pickup_requests" integer DEFAULT 0 NOT NULL;

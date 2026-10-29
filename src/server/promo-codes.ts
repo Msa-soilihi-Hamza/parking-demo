@@ -1,14 +1,14 @@
 import { and, count, desc, eq, gte, or, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { bookings, promoCodes, type PromoCode } from "@/db/schema";
-import { normalizePromoCode, type PromoKind } from "@/lib/promo";
+import { MAX_VALIDITY_DAYS, normalizePromoCode, type PromoKind } from "@/lib/promo";
 import { parisDayBounds } from "@/lib/time";
-import { PAYMENT_HOLD_MINUTES } from "@/server/bookings";
+import { HOLD_COUNTED_MINUTES } from "@/server/bookings";
 
 // The manager's promo codes: created with a validity in days, listed with their use,
 // stopped at once if needed.
 
-export const MAX_VALIDITY_DAYS = 365;
+export { MAX_VALIDITY_DAYS };
 
 /** "Valable 30 jours": from now to the end of the 30th day, today included (Paris time). */
 export function validUntilFor(days: number, now = new Date()): Date {
@@ -74,7 +74,7 @@ export async function listPromoCodes(now = new Date()): Promise<PromoRow[]> {
         eq(bookings.status, "confirmed"),
         and(
           eq(bookings.status, "pending_payment"),
-          gte(bookings.heldAt, new Date(now.getTime() - PAYMENT_HOLD_MINUTES * 60 * 1000)),
+          gte(bookings.heldAt, new Date(now.getTime() - HOLD_COUNTED_MINUTES * 60 * 1000)),
         ),
       ),
     )

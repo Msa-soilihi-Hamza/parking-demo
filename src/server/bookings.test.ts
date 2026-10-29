@@ -5,6 +5,7 @@ import { db } from "@/db";
 import { bookings, parkings, promoCodes, reviews, user, type Parking } from "@/db/schema";
 import {
   advancePickup,
+  attachStripeSession,
   cancelPickupRequest,
   checkInVehicle,
   confirmPayment,
@@ -12,6 +13,10 @@ import {
   holdBooking,
   listCustomerBookings,
   listVehiclesOnSite,
+  MAX_PENDING_HOLDS,
+  MAX_PICKUP_REQUESTS,
+  releaseHold,
+  renewHold,
   suggestSpot,
   type Customer,
   type NewBookingInput,
@@ -44,10 +49,22 @@ const stay = (dropoff: string, ret: string, name: string, parkingSlug = slug): N
 // Booking requires an account: a test customer, as if signed in (code or Google).
 const accountTag = String(Date.now()).slice(-8);
 const customer: Customer = { userId: `test-user-${accountTag}`, email: `client.${accountTag}@example.com` };
+// The same account, as "Mon espace" sees it (its e-mail is verified).
+const owner = { id: customer.userId, email: customer.email, emailVerified: true };
+
+let others = 0;
+/** Another signed-in customer: one account may only hold a few unpaid spots at once. */
+async function another(): Promise<Customer> {
+  others += 1;
+  const id = `test-other-${accountTag}-${others}`;
+  const email = `other.${accountTag}.${others}@example.com`;
+  await db.insert(user).values({ id, name: "Client Test", email, emailVerified: true });
+  return { userId: id, email };
+}
 
 /** The signed-in customer books: the spot is held for payment. Returns the booking id. */
 async function hold(input: NewBookingInput) {
-  const held = await holdBooking(input, customer);
+  const held = await holdBooking(input, await another());
   if (!held.ok) throw new Error(held.error);
   return held.booking.id;
 }
@@ -86,6 +103,7 @@ afterAll(async () => {
   await db.delete(parkings).where(inArray(parkings.id, ids));
   await db.delete(promoCodes).where(inArray(promoCodes.code, ["DIX", "VIEUX", "UNIQUE"].map(promoCode)));
   await db.delete(user).where(eq(user.id, customer.userId));
+  await db.delete(user).where(sql`${user.id} like ${`test-other-${accountTag}-%`}`);
 });
 
 describe("booking with an account", () => {
@@ -115,17 +133,55 @@ describe("booking with an account", () => {
         status: "confirmed",
       })
       .returning();
-    const ids = (await listCustomerBookings(customer)).map((r) => r.booking.id);
+    const ids = (await listCustomerBookings(owner)).map((r) => r.booking.id);
     expect(ids).toContain(older.id);
     expect(ids.length).toBeGreaterThanOrEqual(2);
+
+    // An account whose e-mail is not verified only gets its own bookings.
+    const unverified = (await listCustomerBookings({ ...owner, emailVerified: false })).map((r) => r.booking.id);
+    expect(unverified).not.toContain(older.id);
+  });
+
+  it("does not hand a front-desk booking to the account whose e-mail the desk typed", async () => {
+    const created = await createWalkInBooking({
+      parkingSlug: deskSlug,
+      returnAt: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000),
+      returnTerminal: null,
+      customerName: "Quelqu'un d'autre",
+      email: customer.email,
+      phone: "0600000000",
+      plate: "AU-777-TR",
+      passengers: 1,
+      spot: "B19",
+    });
+    if (!created.ok) throw new Error(created.error);
+    const ids = (await listCustomerBookings(owner)).map((r) => r.booking.id);
+    expect(ids).not.toContain(created.booking.id);
+  });
+
+  it("limits the unpaid holds one account can have at once", async () => {
+    const [{ id: holderId }] = await db
+      .insert(user)
+      .values({ id: `holder-${accountTag}`, name: "Bloqueur", email: `holder.${accountTag}@example.com`, emailVerified: true })
+      .returning({ id: user.id });
+    const holder: Customer = { userId: holderId, email: `holder.${accountTag}@example.com` };
+    for (let i = 0; i < MAX_PENDING_HOLDS; i++) {
+      const held = await holdBooking(stay(`2029-0${i + 1}-01T08:00Z`, `2029-0${i + 1}-02T08:00Z`, "Bloqueur", deskSlug), holder);
+      expect(held.ok).toBe(true);
+    }
+    const refused = await holdBooking(stay("2029-08-01T08:00Z", "2029-08-02T08:00Z", "Bloqueur", deskSlug), holder);
+    expect(refused).toMatchObject({ ok: false, error: expect.stringMatching(/en attente de paiement/) });
+    await db.delete(bookings).where(eq(bookings.userId, holderId));
+    await db.delete(user).where(eq(user.id, holderId));
   });
 });
 
 describe("holding the last spot", () => {
   it("lets only one of ten simultaneous customers take the last spot", async () => {
+    const racers = await Promise.all(Array.from({ length: 10 }, () => another()));
     const results = await Promise.all(
       Array.from({ length: 10 }, (_, i) =>
-        holdBooking(stay("2027-03-01T08:00Z", "2027-03-05T08:00Z", `Client ${i}`), customer),
+        holdBooking(stay("2027-03-01T08:00Z", "2027-03-05T08:00Z", `Client ${i}`), racers[i]),
       ),
     );
     expect(results.filter((r) => r.ok)).toHaveLength(1);
@@ -133,7 +189,7 @@ describe("holding the last spot", () => {
   });
 
   it("accepts a stay that starts after the previous car has left", async () => {
-    expect((await holdBooking(stay("2027-03-05T09:00Z", "2027-03-07T09:00Z", "Suivant"), customer)).ok).toBe(true);
+    expect((await holdBooking(stay("2027-03-05T09:00Z", "2027-03-07T09:00Z", "Suivant"), await another())).ok).toBe(true);
   });
 });
 
@@ -142,6 +198,25 @@ describe("payment", () => {
     const id = await hold(stay("2027-04-01T08:00Z", "2027-04-02T08:00Z", "Stripe"));
     expect(await confirmPayment(id)).toBe(true);
     expect(await confirmPayment(id)).toBe(false);
+  });
+
+  it("frees the spot only when the booking's current Stripe session expires, not an older one", async () => {
+    const id = await hold(stay("2027-04-10T08:00Z", "2027-04-11T08:00Z", "Relance"));
+    await attachStripeSession(id, `cs_test_new_${id}`);
+    // The session replaced by a retry expires: the spot stays held.
+    await releaseHold(id, `cs_test_old_${id}`);
+    expect((await db.select().from(bookings).where(eq(bookings.id, id)))[0].status).toBe("pending_payment");
+    await releaseHold(id, `cs_test_new_${id}`);
+    expect((await db.select().from(bookings).where(eq(bookings.id, id)))[0].status).toBe("cancelled");
+  });
+
+  it("restarts the hold on a retry, so it outlasts the new Stripe session", async () => {
+    const id = await hold(stay("2027-04-20T08:00Z", "2027-04-21T08:00Z", "Relance"));
+    const old = new Date(Date.now() - 25 * 60 * 1000);
+    await db.update(bookings).set({ heldAt: old }).where(eq(bookings.id, id));
+    await renewHold(id);
+    const [row] = await db.select().from(bookings).where(eq(bookings.id, id));
+    expect(row.heldAt!.getTime()).toBeGreaterThan(old.getTime() + 20 * 60 * 1000);
   });
 });
 
@@ -160,6 +235,15 @@ describe("cancelling the bags button", () => {
     const [row] = await db.select().from(bookings).where(eq(bookings.id, booking.id));
     expect(row.pickupStatus).toBe("scheduled");
     expect(row.bagsReadyAt).toBeNull();
+  });
+
+  it("stops alerting the drivers after a few presses and cancels of the same booking", async () => {
+    const booking = await confirmedBooking("2027-07-20T08:00Z", "2027-07-21T08:00Z");
+    for (let i = 0; i < MAX_PICKUP_REQUESTS; i++) {
+      expect(await advancePickup({ accessToken: booking.accessToken }, "scheduled", "bags_ready")).toBe(true);
+      expect(await cancelPickupRequest(booking.accessToken)).toBe(true);
+    }
+    expect(await advancePickup({ accessToken: booking.accessToken }, "scheduled", "bags_ready")).toBe(false);
   });
 
   it("cannot be undone once the shuttle is on its way", async () => {
@@ -315,20 +399,21 @@ describe("promo codes", () => {
 
   it("stores the discount of a valid code with the booking", async () => {
     // 3 days at 10 €: 30 €, minus 10 %.
-    const created = await holdBooking(desk("2028-01-01T08:00Z", "2028-01-04T08:00Z", "Promo", promoCode("DIX")), customer);
+    const created = await holdBooking(desk("2028-01-01T08:00Z", "2028-01-04T08:00Z", "Promo", promoCode("DIX")), await another());
     if (!created.ok) throw new Error(created.error);
     expect(created.booking).toMatchObject({ priceCents: 2700, discountCents: 300 });
   });
 
   it("refuses an expired code instead of charging the full price silently", async () => {
-    const created = await holdBooking(desk("2028-01-10T08:00Z", "2028-01-11T08:00Z", "Expiré", promoCode("VIEUX")), customer);
+    const created = await holdBooking(desk("2028-01-10T08:00Z", "2028-01-11T08:00Z", "Expiré", promoCode("VIEUX")), await another());
     expect(created).toEqual({ ok: false, error: "Ce code promo a expiré." });
   });
 
   it("gives the last use of a limited code to only one of two customers", async () => {
+    const [a, b] = [await another(), await another()];
     const results = await Promise.all([
-      holdBooking(desk("2028-02-01T08:00Z", "2028-02-02T08:00Z", "Unique A", promoCode("UNIQUE")), customer),
-      holdBooking(desk("2028-02-01T08:00Z", "2028-02-02T08:00Z", "Unique B", promoCode("UNIQUE")), customer),
+      holdBooking(desk("2028-02-01T08:00Z", "2028-02-02T08:00Z", "Unique A", promoCode("UNIQUE")), a),
+      holdBooking(desk("2028-02-01T08:00Z", "2028-02-02T08:00Z", "Unique B", promoCode("UNIQUE")), b),
     ]);
     expect(results.filter((r) => r.ok)).toHaveLength(1);
     const refused = results.find((r) => !r.ok);

@@ -44,6 +44,9 @@ export function parisLocalToDate(value: string): Date | null {
   if (!match) return null;
   const [, y, mo, d, h, mi] = match.map(Number);
   const wallClock = Date.UTC(y, mo - 1, d, h, mi);
+  // Date.UTC rolls "month 13" or "February 30" over: such a date was never typed.
+  const check = new Date(wallClock);
+  if (check.getUTCMonth() !== mo - 1 || check.getUTCDate() !== d || h > 23 || mi > 59) return null;
   let instant = wallClock - parisOffset(wallClock);
   // Around DST changes the offset at the guessed instant can differ: correct once.
   const corrected = wallClock - parisOffset(instant);

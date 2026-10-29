@@ -14,6 +14,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { SUPPORT_PHONE, SUPPORT_PHONE_HREF } from "@/lib/contact";
 import { formatEuros } from "@/lib/pricing";
 import { formatDateTime, formatTime } from "@/lib/time";
+import { accessToken } from "@/lib/validation";
 import { confirmPayment, getBookingByToken } from "@/server/bookings";
 import { arrivalQrSvg } from "@/server/qr";
 import { getReviewForBooking } from "@/server/reviews";
@@ -47,9 +48,11 @@ async function Reservation({
   const { token } = await params;
   const { session_id: sessionId } = await searchParams;
 
+  if (!accessToken.safeParse(token).success) notFound();
   let found = await getBookingByToken(token);
   if (!found || found.booking.status === "pending_verification") notFound();
-  if (found.booking.status === "pending_payment" && typeof sessionId === "string") {
+  // Back from Stripe: "cs_test_…", the only shape passed on to Stripe.
+  if (found.booking.status === "pending_payment" && typeof sessionId === "string" && /^cs_\w{1,250}$/.test(sessionId)) {
     await confirmFromCheckout(found.booking.id, sessionId);
     found = (await getBookingByToken(token))!;
   }

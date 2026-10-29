@@ -78,6 +78,20 @@
       "when": 1793032276801,
       "tag": "0010_team_roles",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1793221785694,
+      "tag": "0011_push_subscription_owner",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1793221848961,
+      "tag": "0012_pickup_request_count",
+      "breakpoints": true
     }
   ]
 }

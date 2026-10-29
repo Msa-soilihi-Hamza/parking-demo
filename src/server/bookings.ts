@@ -11,6 +11,19 @@ import { sendBookingConfirmation, sendWalkInConfirmation } from "@/server/mailer
 /** A verified but unpaid booking holds its spot for this long (Stripe Checkout's minimum). */
 export const PAYMENT_HOLD_MINUTES = 30;
 
+/**
+ * How long a held spot still counts as taken. A bit longer than the Stripe Checkout
+ * session (30 min from its creation, a moment after the hold starts): a payment can
+ * never complete for a spot already given to someone else.
+ */
+export const HOLD_COUNTED_MINUTES = PAYMENT_HOLD_MINUTES + 5;
+
+/** Unpaid holds one account can have at once: enough to retry, not to fill a parking. */
+export const MAX_PENDING_HOLDS = 3;
+
+/** "J'ai mes bagages" presses per booking (cancelling in between included). */
+export const MAX_PICKUP_REQUESTS = 5;
+
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 type Executor = typeof db | Tx;
 
@@ -31,7 +44,7 @@ async function peakOccupancy(tx: Executor, parkingId: number, start: Date, end: 
         AND dropoff_at < ${end} AND return_at > ${start}
         AND (status = 'confirmed'
           OR (status = 'pending_payment'
-              AND held_at > now() - make_interval(mins => ${PAYMENT_HOLD_MINUTES})))
+              AND held_at > now() - make_interval(mins => ${HOLD_COUNTED_MINUTES})))
     ),
     instants AS (
       SELECT ${start}::timestamptz AS t
@@ -50,8 +63,8 @@ export type StayQuote =
       ok: true;
       days: number;
       lines: PriceLine[];
-      /** Most cars parked at once over the stay, before this one */
-      occupied: number;
+      /** Most cars parked at once over the stay, before this one (null: not computed) */
+      occupied: number | null;
       capacity: number;
       promo: { id: string; code: string; label: string } | null;
       /** The code was refused: the price is shown without it */
@@ -77,7 +90,7 @@ async function promoUses(executor: Executor, promoId: string, excludeBookingId?:
           eq(bookings.status, "confirmed"),
           and(
             eq(bookings.status, "pending_payment"),
-            gte(bookings.heldAt, new Date(Date.now() - PAYMENT_HOLD_MINUTES * 60 * 1000)),
+            gte(bookings.heldAt, new Date(Date.now() - HOLD_COUNTED_MINUTES * 60 * 1000)),
           ),
         ),
         excludeBookingId ? ne(bookings.id, excludeBookingId) : undefined,
@@ -101,16 +114,20 @@ async function promoRefusal(executor: Executor, promo: PromoCode | undefined, ex
  * The price of a stay, as charged: degressive days, − promo code. Stable: it does not
  * depend on how full the parking is. Used by the live price on the form, by the
  * booking itself and by the front desk. It also says how full the parking is, for the
- * capacity check.
+ * capacity check; the public live price skips that query (`occupancy: false`): it does
+ * not need it, and anyone can call it.
  */
 export async function priceStay(
   input: { parking: Parking; dropoffAt: Date; returnAt: Date; promoCode?: string | null },
   executor: Executor = db,
+  { occupancy = true }: { occupancy?: boolean } = {},
 ): Promise<StayQuote> {
   const base = quote(input.parking.dailyRateCents, input.dropoffAt, input.returnAt);
   if (!base.ok) return base;
 
-  const occupied = await peakOccupancy(executor, input.parking.id, input.dropoffAt, input.returnAt);
+  const occupied = occupancy
+    ? await peakOccupancy(executor, input.parking.id, input.dropoffAt, input.returnAt)
+    : null;
 
   let promo: PromoCode | undefined;
   let promoError: string | null = null;
@@ -163,6 +180,21 @@ export function newAccessToken() {
 
 const FULL = "Désolé, ce parking est complet sur une partie de vos dates.";
 
+/** Spots this account holds right now without having paid. */
+async function pendingHoldsOf(executor: Executor, userId: string): Promise<number> {
+  const [{ holds }] = await executor
+    .select({ holds: count() })
+    .from(bookings)
+    .where(
+      and(
+        eq(bookings.userId, userId),
+        eq(bookings.status, "pending_payment"),
+        gte(bookings.heldAt, new Date(Date.now() - HOLD_COUNTED_MINUTES * 60 * 1000)),
+      ),
+    );
+  return holds;
+}
+
 /**
  * A signed-in customer books: the spot is held for payment right away.
  * The parking row is locked (FOR UPDATE) so two customers racing for the last spot
@@ -180,6 +212,14 @@ export async function holdBooking(
   }
 
   return db.transaction(async (tx) => {
+    // One customer's holds are counted one at a time, even across parkings.
+    await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${`hold:${customer.userId}`}))`);
+    if ((await pendingHoldsOf(tx, customer.userId)) >= MAX_PENDING_HOLDS) {
+      return {
+        ok: false,
+        error: "Vous avez déjà des réservations en attente de paiement : payez-les ou attendez 30 minutes.",
+      };
+    }
     await tx.select({ id: parkings.id }).from(parkings).where(eq(parkings.id, parking.id)).for("update");
 
     const price = await priceStay(
@@ -189,7 +229,7 @@ export async function holdBooking(
     if (!price.ok) return price;
     // A refused code is never dropped silently: the customer would pay more than expected.
     if (price.promoError) return { ok: false, error: price.promoError };
-    if (price.occupied >= parking.capacity) return { ok: false, error: FULL };
+    if ((price.occupied ?? 0) >= parking.capacity) return { ok: false, error: FULL };
 
     if (price.promo) {
       const promo = await findPromo(tx, price.promo.code, true);
@@ -224,11 +264,27 @@ export async function holdBooking(
   });
 }
 
+/** An account, as its session says: the e-mail only proves ownership once it is verified. */
+export type Owner = { id: string; email: string; emailVerified: boolean };
+
 /**
- * "Mon espace": the customer's bookings, latest stay first. Bookings made before
- * accounts existed are found by their e-mail, which the account has verified.
+ * The bookings that belong to an account: its own, plus the online ones made before
+ * accounts existed, found by their e-mail (verified at the time with a code). Only if
+ * the account verified that e-mail too. Never a front-desk booking by e-mail: the desk
+ * types the address, nobody proved it.
  */
-export async function listCustomerBookings(customer: Customer) {
+export function ownedBy(owner: Owner) {
+  const byEmail = owner.emailVerified
+    ? and(
+        eq(bookings.paymentMethod, "online"),
+        sql`lower(${bookings.email}) = ${owner.email.toLowerCase()}`,
+      )
+    : undefined;
+  return or(eq(bookings.userId, owner.id), byEmail);
+}
+
+/** "Mon espace": the customer's bookings, latest stay first. */
+export async function listCustomerBookings(owner: Owner) {
   return db
     .select({ booking: bookings, parkingName: parkings.name })
     .from(bookings)
@@ -236,10 +292,7 @@ export async function listCustomerBookings(customer: Customer) {
     .where(
       and(
         inArray(bookings.status, ["confirmed", "pending_payment"]),
-        or(
-          eq(bookings.userId, customer.userId),
-          sql`lower(${bookings.email}) = ${customer.email.toLowerCase()}`,
-        ),
+        ownedBy(owner),
       ),
     )
     .orderBy(desc(bookings.dropoffAt));
@@ -291,12 +344,33 @@ export async function getHeldBooking(bookingId: string) {
   return row ?? null;
 }
 
-/** Checkout expired or abandoned: free the held spot. */
-export async function releaseHold(bookingId: string) {
+/**
+ * A new payment attempt on a spot still held: the 30 minutes start again from now, so
+ * the hold always outlasts the new Stripe session. Allowed only while the hold counts
+ * (getHeldBooking), so no one else can have taken the spot in between.
+ */
+export async function renewHold(bookingId: string) {
+  await db
+    .update(bookings)
+    .set({ heldAt: new Date() })
+    .where(and(eq(bookings.id, bookingId), eq(bookings.status, "pending_payment")));
+}
+
+/**
+ * Checkout expired or abandoned: free the held spot. Only the booking's current Stripe
+ * session counts: the expiry of an older one (before a retry) changes nothing.
+ */
+export async function releaseHold(bookingId: string, stripeSessionId: string) {
   await db
     .update(bookings)
     .set({ status: "cancelled" })
-    .where(and(eq(bookings.id, bookingId), eq(bookings.status, "pending_payment")));
+    .where(
+      and(
+        eq(bookings.id, bookingId),
+        eq(bookings.status, "pending_payment"),
+        eq(bookings.stripeSessionId, stripeSessionId),
+      ),
+    );
 }
 
 export async function getBookingByToken(token: string) {
@@ -333,7 +407,7 @@ export async function createWalkInBooking(input: WalkInInput): Promise<Result<{ 
 
   const now = new Date();
   // Same price as online for these dates.
-  const price = await priceStay({ parking, dropoffAt: now, returnAt: input.returnAt });
+  const price = await priceStay({ parking, dropoffAt: now, returnAt: input.returnAt }, db, { occupancy: false });
   if (!price.ok) return { ok: false, error: price.error };
 
   let result: Result<{ booking: Booking }>;
@@ -567,10 +641,23 @@ export async function advancePickup(
         : { pickedUpAt: now };
   const target =
     "id" in where ? eq(bookings.id, where.id) : eq(bookings.accessToken, where.accessToken);
+  const request = to === "bags_ready";
   const updated = await db
     .update(bookings)
-    .set({ pickupStatus: to, ...timestamps, ...extra })
-    .where(and(target, eq(bookings.status, "confirmed"), eq(bookings.pickupStatus, from)))
+    .set({
+      pickupStatus: to,
+      ...timestamps,
+      ...extra,
+      ...(request && { pickupRequests: sql`${bookings.pickupRequests} + 1` }),
+    })
+    .where(
+      and(
+        target,
+        eq(bookings.status, "confirmed"),
+        eq(bookings.pickupStatus, from),
+        request ? lt(bookings.pickupRequests, MAX_PICKUP_REQUESTS) : undefined,
+      ),
+    )
     .returning({ id: bookings.id });
   return updated.length > 0;
 }

@@ -16,6 +16,7 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
+import { forgetThisDevice } from "@/components/shuttle/push-toggle";
 import { authClient } from "@/lib/auth-client";
 import type { TeamSpace } from "@/lib/permissions";
 
@@ -50,6 +51,8 @@ export function LogoutButton({ space }: { space: TeamSpace }) {
             className="w-full"
             onClick={() =>
               startTransition(async () => {
+                // As the dialog says: no more customer requests on this device.
+                await forgetThisDevice().catch((error) => console.error("Push unsubscribe failed", error));
                 await authClient.signOut();
                 router.push("/");
                 router.refresh();

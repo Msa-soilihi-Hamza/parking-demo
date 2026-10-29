@@ -15,10 +15,12 @@ import { StayDatesPicker, type StayDates } from "@/components/stay-dates-picker"
 import { Input } from "@/components/ui/input";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Separator } from "@/components/ui/separator";
+import { useFormValidation } from "@/components/use-form-validation";
 import { useStayQuote } from "@/components/use-stay-quote";
 import { authClient } from "@/lib/auth-client";
 import { formatEuros, quote } from "@/lib/pricing";
 import { parisLocalToDate } from "@/lib/time";
+import { bookingDetailsSchema } from "@/lib/validation";
 
 export type ParkingOption = {
   slug: string;
@@ -62,6 +64,7 @@ export function BookingFlow({
   const router = useRouter();
   const signInRef = useRef<HTMLDivElement>(null);
   const [details, submitDetails, submitting] = useActionState<DetailsState, FormData>(submitDetailsAction, {});
+  const check = useFormValidation(bookingDetailsSchema, details.fieldErrors);
   const [slug, setSlug] = useState(defaultParking);
   const [dates, setDates] = useState<StayDates>({
     from: defaultDropoff.slice(0, 10),
@@ -114,13 +117,22 @@ export function BookingFlow({
   })}`;
   // React resets the form after each submit: refill what the customer typed.
   const typed = (name: string) => details.values?.[name] ?? "";
-  const fieldError = (name: string) =>
-    details.fieldErrors?.[name] ? <FieldError>{details.fieldErrors[name]}</FieldError> : null;
+  const fieldError = (name: string) => {
+    const message = check.errorFor(name);
+    return message ? <FieldError>{message}</FieldError> : null;
+  };
 
   return (
     <div className="grid gap-6 lg:grid-cols-[1fr_300px] lg:items-start">
       <div className="space-y-8">
-        <form action={submitDetails} id="booking-form" className="space-y-8">
+        <form
+          action={submitDetails}
+          onSubmit={check.onSubmit}
+          onInput={check.onInput}
+          noValidate
+          id="booking-form"
+          className="space-y-8"
+        >
           <FieldSet>
             <FieldLegend>Votre séjour</FieldLegend>
             <FieldGroup>
@@ -214,14 +226,25 @@ export function BookingFlow({
                     id="customerName"
                     name="customerName"
                     required
+                    maxLength={80}
                     autoComplete="name"
+                    aria-invalid={Boolean(check.errorFor("customerName"))}
                     defaultValue={typed("customerName") || customer.name}
                   />
                   {fieldError("customerName")}
                 </Field>
                 <Field>
                   <FieldLabel htmlFor="phone">Téléphone</FieldLabel>
-                  <Input id="phone" name="phone" type="tel" required autoComplete="tel" defaultValue={typed("phone")} />
+                  <Input
+                    id="phone"
+                    name="phone"
+                    type="tel"
+                    required
+                    maxLength={20}
+                    autoComplete="tel"
+                    aria-invalid={Boolean(check.errorFor("phone"))}
+                    defaultValue={typed("phone")}
+                  />
                   {fieldError("phone")}
                 </Field>
                 <Field>
@@ -230,7 +253,10 @@ export function BookingFlow({
                     id="plate"
                     name="plate"
                     required
+                    maxLength={12}
                     placeholder="AB-123-CD"
+                    autoComplete="off"
+                    aria-invalid={Boolean(check.errorFor("plate"))}
                     className="uppercase placeholder:normal-case"
                     defaultValue={typed("plate")}
                   />
@@ -307,6 +333,7 @@ export function BookingFlow({
                   <Input
                     aria-label="Code promo"
                     placeholder="Code promo"
+                    maxLength={20}
                     value={promoInput}
                     onChange={(e) => setPromoInput(e.target.value)}
                     onKeyDown={(e) => {

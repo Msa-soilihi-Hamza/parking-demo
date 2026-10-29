@@ -1,8 +1,9 @@
-import { and, desc, eq, isNotNull, ne } from "drizzle-orm";
+import { and, desc, eq, isNotNull, ne, notLike } from "drizzle-orm";
 import { db } from "@/db";
 import { bookings, parkings, reviews, type Review } from "@/db/schema";
+import { REVIEW_MAX_LENGTH } from "@/lib/validation";
 
-export const REVIEW_MAX_LENGTH = 500;
+export { REVIEW_MAX_LENGTH };
 
 /** "Sarah Martin" → "Sarah M.": the public site never shows full names. */
 export function authorNameFrom(fullName: string): string {
@@ -78,7 +79,15 @@ export async function listPublishedReviews(limit: number): Promise<PublicReview[
     .from(reviews)
     .innerJoin(bookings, eq(reviews.bookingId, bookings.id))
     .innerJoin(parkings, eq(bookings.parkingId, parkings.id))
-    .where(and(eq(reviews.publishConsent, true), isNotNull(reviews.comment), ne(reviews.comment, "")))
+    // Never on a demo booking (ESC-DEMO…): the public site only shows real reviews.
+    .where(
+      and(
+        eq(reviews.publishConsent, true),
+        isNotNull(reviews.comment),
+        ne(reviews.comment, ""),
+        notLike(bookings.reference, "ESC-DEMO%"),
+      ),
+    )
     .orderBy(desc(reviews.createdAt))
     .limit(limit);
   return rows.map((r) => ({ ...r, comment: r.comment! }));

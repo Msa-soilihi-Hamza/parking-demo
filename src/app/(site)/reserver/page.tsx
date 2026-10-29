@@ -4,6 +4,7 @@ import { Suspense } from "react";
 import { BookingFlow } from "@/components/booking-flow";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Skeleton } from "@/components/ui/skeleton";
+import { normalizePromoCode } from "@/lib/promo";
 import { dateToParisLocal, parisDay, parisDayBounds, parisLocalToDate } from "@/lib/time";
 import { auth, googleEnabled } from "@/server/auth";
 import { listParkings } from "@/server/bookings";
@@ -66,7 +67,7 @@ async function Booking({ searchParams }: Pick<PageProps<"/reserver">, "searchPar
         defaultDropoff={fromQuery(params.dropoffAt) ?? at8(tomorrow)}
         defaultReturn={fromQuery(params.returnAt) ?? at8(nextWeek)}
         minDay={parisDay(new Date())}
-        defaultPromo={typeof params.promo === "string" ? params.promo.slice(0, 20) : ""}
+        defaultPromo={typeof params.promo === "string" ? (normalizePromoCode(params.promo) ?? "") : ""}
         customer={session ? { name: session.user.name, email: session.user.email } : null}
         googleEnabled={googleEnabled}
       />

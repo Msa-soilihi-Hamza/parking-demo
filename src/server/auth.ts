@@ -2,13 +2,14 @@ import { waitUntil } from "@vercel/functions";
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { nextCookies } from "better-auth/next-js";
-import { APIError } from "better-auth/api";
+import { APIError, createAuthMiddleware } from "better-auth/api";
 import { admin, emailOTP } from "better-auth/plugins";
 import { db } from "@/db";
 import * as schema from "@/db/schema";
 import { ac, roles } from "@/lib/permissions";
 import { activeBookingOf, anonymizeBookingsOf } from "@/server/account-deletion";
 import { sendAccountDeletionLink, sendVerificationCode } from "@/server/mailer";
+import { codeSendAllowed } from "@/server/otp-budget";
 import { appUrl } from "@/server/stripe";
 
 // Accounts (Better Auth): sign in with a 6-digit code sent by e-mail, no password, or
@@ -28,6 +29,34 @@ export const auth = betterAuth({
   secret: process.env.BETTER_AUTH_SECRET,
   database: drizzleAdapter(db, { provider: "pg", schema }),
   socialProviders: google ? { google } : {},
+  // Better Auth routes the site never calls: closed, so they cannot be used either
+  // (other ways to check a code, password reset, account linking, profile edits).
+  disabledPaths: [
+    "/email-otp/check-verification-otp",
+    "/email-otp/verify-email",
+    "/email-otp/request-password-reset",
+    "/forget-password/email-otp",
+    "/email-otp/reset-password",
+    "/update-user",
+    "/link-social",
+    "/unlink-account",
+  ],
+  hooks: {
+    before: createAuthMiddleware(async (ctx) => {
+      if (ctx.path !== "/email-otp/send-verification-otp") return;
+      // The site only signs in with a code: no other kind of code is sent.
+      if (ctx.body?.type !== "sign-in") {
+        throw new APIError("BAD_REQUEST", { message: "Type de code non pris en charge." });
+      }
+      // Each new code gets 5 tries: without a cap per address, asking again and again
+      // (from many IPs) would let someone keep guessing an account's code.
+      if (!(await codeSendAllowed(String(ctx.body.email ?? "")))) {
+        throw new APIError("TOO_MANY_REQUESTS", {
+          message: "Trop de codes demandés pour cette adresse. Réessayez dans une heure.",
+        });
+      }
+    }),
+  },
   user: {
     // The customer can delete their account from "Mon espace", confirmed by an e-mail link.
     deleteUser: {
@@ -43,8 +72,8 @@ export const auth = betterAuth({
             message: `Réservation en cours (${active}) : vous pourrez supprimer votre compte après votre retour.`,
           });
         }
-      },
-      async afterDelete(user) {
+        // Before the account row goes: deleting it empties bookings.user_id (ON DELETE
+        // SET NULL), and the bookings could then only be found by e-mail.
         await anonymizeBookingsOf(user);
       },
     },

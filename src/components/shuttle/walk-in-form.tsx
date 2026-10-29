@@ -17,8 +17,10 @@ import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Separator } from "@/components/ui/separator";
 import { PriceDetails } from "@/components/price-details";
+import { useFormValidation } from "@/components/use-form-validation";
 import { useStayQuote } from "@/components/use-stay-quote";
 import { formatEuros } from "@/lib/pricing";
+import { walkInSchema } from "@/lib/validation";
 
 export type DeskParking = {
   slug: string;
@@ -62,9 +64,13 @@ export function WalkInForm({
   today: string;
 }) {
   const [state, formAction, pending] = useActionState<WalkInState, FormData>(createWalkInAction, {});
+  const check = useFormValidation(walkInSchema, state.fieldErrors);
   const typed = (name: string) => state.values?.[name] ?? "";
-  const fieldError = (name: string) =>
-    state.fieldErrors?.[name] ? <FieldError>{state.fieldErrors[name]}</FieldError> : null;
+  const fieldError = (name: string) => {
+    const message = check.errorFor(name);
+    return message ? <FieldError>{message}</FieldError> : null;
+  };
+  const invalid = (name: string) => Boolean(check.errorFor(name));
 
   const [slug, setSlug] = useState(state.values?.parking ?? parkings[0]?.slug ?? "");
   const suggestionFor = (parkingSlug: string) => parkings.find((p) => p.slug === parkingSlug)?.suggestedSpot ?? "";
@@ -83,7 +89,12 @@ export function WalkInForm({
   const price = server.quote;
 
   return (
-    <form action={formAction} className="grid gap-8 lg:grid-cols-[1fr_300px] lg:items-start">
+    <form
+      action={formAction}
+      onSubmit={check.onSubmit}
+      onInput={check.onInput}
+      noValidate
+      className="grid gap-8 lg:grid-cols-[1fr_300px] lg:items-start">
       <div className="space-y-8">
         <FieldSet>
           <FieldLegend>Séjour</FieldLegend>
@@ -174,17 +185,39 @@ export function WalkInForm({
           <FieldGroup className="grid gap-4 sm:grid-cols-2">
             <Field>
               <FieldLabel htmlFor="customerName">Nom complet</FieldLabel>
-              <Input id="customerName" name="customerName" required defaultValue={typed("customerName")} />
+              <Input
+                id="customerName"
+                name="customerName"
+                required
+                maxLength={80}
+                aria-invalid={invalid("customerName")}
+                defaultValue={typed("customerName")}
+              />
               {fieldError("customerName")}
             </Field>
             <Field>
               <FieldLabel htmlFor="phone">Téléphone</FieldLabel>
-              <Input id="phone" name="phone" type="tel" required defaultValue={typed("phone")} />
+              <Input
+                id="phone"
+                name="phone"
+                type="tel"
+                required
+                maxLength={20}
+                aria-invalid={invalid("phone")}
+                defaultValue={typed("phone")}
+              />
               {fieldError("phone")}
             </Field>
             <Field>
               <FieldLabel htmlFor="email">E-mail (facultatif)</FieldLabel>
-              <Input id="email" name="email" type="email" defaultValue={typed("email")} />
+              <Input
+                id="email"
+                name="email"
+                type="email"
+                maxLength={254}
+                aria-invalid={invalid("email")}
+                defaultValue={typed("email")}
+              />
               <FieldDescription>Pour lui envoyer le lien de sa réservation.</FieldDescription>
               {fieldError("email")}
             </Field>
@@ -194,6 +227,9 @@ export function WalkInForm({
                 id="plate"
                 name="plate"
                 required
+                maxLength={12}
+                autoComplete="off"
+                aria-invalid={invalid("plate")}
                 placeholder="AB-123-CD"
                 className="font-mono uppercase placeholder:normal-case"
                 defaultValue={typed("plate")}
@@ -207,6 +243,7 @@ export function WalkInForm({
                 name="spot"
                 required
                 maxLength={8}
+                aria-invalid={invalid("spot")}
                 placeholder="B12"
                 autoCapitalize="characters"
                 autoComplete="off"
