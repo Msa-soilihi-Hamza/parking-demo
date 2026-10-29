@@ -63,7 +63,7 @@ async function FrontDesk() {
                   <span
                     className={cn(
                       "inline-flex shrink-0 items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium whitespace-nowrap",
-                      r.parkedAt ? "bg-emerald-50 text-emerald-700" : "bg-muted text-muted-foreground",
+                      r.parkedAt ? "bg-emerald-50 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-300" : "bg-muted text-muted-foreground",
                     )}
                   >
                     <span className={cn("size-1.5 rounded-full", r.parkedAt ? "bg-emerald-500" : "bg-muted-foreground/50")} />

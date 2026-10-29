@@ -65,15 +65,15 @@ export const STATUS_STYLE: Record<PickupStatus, { dot: string; pill: string; car
   },
   en_route: {
     dot: "bg-amber-500",
-    pill: "bg-amber-50 text-amber-700",
+    pill: "bg-amber-50 dark:bg-amber-500/15 text-amber-700 dark:text-amber-300",
     card: "border-amber-400 ring-1 ring-amber-400",
-    text: "text-amber-700",
+    text: "text-amber-700 dark:text-amber-300",
   },
   picked_up: {
     dot: "bg-emerald-500",
-    pill: "bg-emerald-50 text-emerald-700",
+    pill: "bg-emerald-50 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-300",
     card: "",
-    text: "text-emerald-700",
+    text: "text-emerald-700 dark:text-emerald-300",
   },
 };
 

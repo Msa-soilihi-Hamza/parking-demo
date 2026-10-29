@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Geist_Mono, Instrument_Serif, Inter } from "next/font/google";
+import { ThemeProvider } from "@/components/theme-provider";
 import { Toaster } from "@/components/ui/sonner";
 import { cn } from "@/lib/utils";
 import "./globals.css";
@@ -29,14 +30,18 @@ export const metadata: Metadata = {
 // tool has its own layout in navette/layout.tsx.
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
+    // The theme script and extensions such as Dark Reader change <html> before React hydrates.
     <html
       lang="fr"
       className={cn("h-full antialiased", geistMono.variable, instrumentSerif.variable, inter.variable, "font-sans")}
+      suppressHydrationWarning
     >
       {/* Browser extensions add attributes to <body> before React hydrates. */}
       <body className="flex min-h-full flex-col" suppressHydrationWarning>
-        {children}
-        <Toaster position="top-center" />
+        <ThemeProvider>
+          {children}
+          <Toaster position="top-center" />
+        </ThemeProvider>
       </body>
     </html>
   );

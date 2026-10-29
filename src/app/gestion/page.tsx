@@ -12,10 +12,10 @@ import { listPromoCodes, type PromoRow, type PromoStatus } from "@/server/promo-
 import { hasAccess } from "@/server/team-access";
 
 const STATUS: Record<PromoStatus, { label: string; style: string }> = {
-  active: { label: "Actif", style: "bg-emerald-50 text-emerald-700" },
+  active: { label: "Actif", style: "bg-emerald-50 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-300" },
   scheduled: { label: "Pas encore valable", style: "bg-muted text-muted-foreground" },
   expired: { label: "Expiré", style: "bg-muted text-muted-foreground" },
-  exhausted: { label: "Épuisé", style: "bg-amber-50 text-amber-700" },
+  exhausted: { label: "Épuisé", style: "bg-amber-50 dark:bg-amber-500/15 text-amber-700 dark:text-amber-300" },
   inactive: { label: "Désactivé", style: "bg-primary/10 text-primary" },
 };
 

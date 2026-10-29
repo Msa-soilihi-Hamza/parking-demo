@@ -36,7 +36,7 @@ export function PromoCodeForm({ now }: { now: number }) {
   return (
     <form action={formAction} className="space-y-6">
       {state.created && (
-        <p className="flex items-center gap-2 rounded-lg bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
+        <p className="flex items-center gap-2 rounded-lg bg-emerald-50 dark:bg-emerald-500/15 px-4 py-3 text-sm text-emerald-800 dark:text-emerald-200">
           <CircleCheckIcon className="size-4" /> Code <span className="font-mono font-semibold">{state.created}</span> créé :
           il marche dès maintenant sur la page de réservation.
         </p>

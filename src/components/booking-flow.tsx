@@ -286,7 +286,7 @@ export function BookingFlow({
           {!details.retryBookingId && (
             <div className="space-y-1.5">
               {appliedPromo && !promoError ? (
-                <p className="flex items-center justify-between gap-2 rounded-lg bg-emerald-50 px-3 py-2 text-emerald-800">
+                <p className="flex items-center justify-between gap-2 rounded-lg bg-emerald-50 dark:bg-emerald-500/15 px-3 py-2 text-emerald-800 dark:text-emerald-200">
                   <span className="inline-flex items-center gap-1.5">
                     <TicketPercentIcon className="size-4" /> Code {appliedPromo} appliqué
                   </span>
@@ -296,7 +296,7 @@ export function BookingFlow({
                       setAppliedPromo("");
                       setPromoInput("");
                     }}
-                    className="text-emerald-800/70 hover:text-emerald-900"
+                    className="text-emerald-800/70 dark:text-emerald-200/70 hover:text-emerald-900 dark:hover:text-emerald-100"
                     aria-label="Retirer le code promo"
                   >
                     <XIcon className="size-4" />

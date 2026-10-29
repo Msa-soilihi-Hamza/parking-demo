@@ -1,9 +1,12 @@
 import Link from "next/link";
 import { connection } from "next/server";
 import { Suspense } from "react";
+import { BrandLogo } from "@/components/brand-logo";
 import { LogoutButton } from "@/components/shuttle/logout-button";
+import { SpaceSwitcher } from "@/components/shuttle/space-switcher";
 import { TeamNav } from "@/components/shuttle/team-nav";
 import { TeamSignInRedirect } from "@/components/shuttle/team-sign-in-redirect";
+import { ThemeToggle } from "@/components/theme-toggle";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { spacesFor } from "@/lib/permissions";
@@ -47,43 +50,30 @@ async function Shell({ space, children }: { space: TeamSpace; children: React.Re
 
   return (
     <>
-      <header className="sticky top-0 z-40 border-b bg-background/80 backdrop-blur">
-        {/* Phones: logo + logout on the first row, the tabs on a second row. */}
-        <div className="mx-auto flex max-w-5xl flex-wrap items-center justify-between gap-x-6 gap-y-2 px-4 py-2.5 sm:h-14 sm:flex-nowrap sm:px-6 sm:py-0">
-          <Link href={TEAM_HOMES[space]} className="flex items-center gap-2 font-semibold tracking-tight">
-            <span className="size-2.5 rounded-full bg-primary" aria-hidden />
-            Escale <span className="font-normal text-muted-foreground">· {NAMES[space]}</span>
-          </Link>
-          <div className="order-last w-full min-w-0 sm:order-none sm:mr-auto sm:w-auto">
+      <header className="sticky top-0 z-40 border-b border-border/60 bg-background/75 backdrop-blur-lg">
+        <div className="mx-auto flex h-14 max-w-5xl items-center gap-3 px-4 sm:px-6 md:h-16 md:gap-5">
+          <div className="flex items-center gap-2.5">
+            <Link href={TEAM_HOMES[space]} aria-label={`Escale, espace ${NAMES[space]}`} className="rounded-lg">
+              <BrandLogo />
+            </Link>
+            {/* The manager moves between every space from here. */}
+            <SpaceSwitcher
+              current={NAMES[space]}
+              others={spaces.filter((s) => s !== space).map((s) => ({ href: TEAM_HOMES[s], label: NAMES[s] }))}
+            />
+          </div>
+          <div className="hidden min-w-0 md:block">
             <TeamNav space={space} />
           </div>
-          <div className="flex items-center gap-2">
-            {/* The manager moves between every space. */}
-            {spaces.length > 1 && (
-              <nav className="hidden items-center gap-1 text-sm lg:flex" aria-label="Espaces">
-                {spaces
-                  .filter((s) => s !== space)
-                  .map((s) => (
-                    <Link key={s} href={TEAM_HOMES[s]} className="rounded-full px-2.5 py-1 text-muted-foreground hover:text-foreground">
-                      {NAMES[s]}
-                    </Link>
-                  ))}
-              </nav>
-            )}
+          <div className="ml-auto flex items-center gap-1">
+            <ThemeToggle />
             <LogoutButton space={space} />
           </div>
         </div>
-        {spaces.length > 1 && (
-          <nav className="flex justify-center gap-1 border-t px-4 py-1.5 text-xs lg:hidden" aria-label="Espaces">
-            {spaces
-              .filter((s) => s !== space)
-              .map((s) => (
-                <Link key={s} href={TEAM_HOMES[s]} className="rounded-full px-2.5 py-1 text-muted-foreground hover:text-foreground">
-                  Espace {NAMES[s]}
-                </Link>
-              ))}
-          </nav>
-        )}
+        {/* Phones: the tabs on their own row, across the whole width. */}
+        <div className="px-4 pb-2.5 sm:px-6 md:hidden">
+          <TeamNav space={space} fill />
+        </div>
       </header>
       <main className="flex-1">{children}</main>
     </>

@@ -226,7 +226,7 @@ export default function LandingPage() {
       </section>
 
       {/* Prices, as a departure board */}
-      <section className="mx-auto max-w-6xl px-4 pb-24 sm:px-6">
+      <section id="tarifs" className="mx-auto max-w-6xl scroll-mt-20 px-4 pb-24 sm:px-6">
         <div className="flex flex-wrap items-end justify-between gap-4">
           <h2 className="text-3xl font-semibold tracking-tight sm:text-4xl">
             Des prix <span className="font-serif font-normal italic">qui ne décollent pas.</span>
@@ -267,7 +267,7 @@ export default function LandingPage() {
 
       {/* Final call to action */}
       <section className="mx-auto max-w-6xl px-4 pb-24 sm:px-6">
-        <div className="flex flex-col items-start justify-between gap-8 rounded-[2rem] bg-foreground px-8 py-14 text-background sm:px-12 md:flex-row md:items-center">
+        <div className="flex flex-col items-start justify-between gap-8 rounded-[2rem] bg-neutral-950 dark:bg-card dark:ring-1 dark:ring-border dark:ring-inset px-8 py-14 text-white sm:px-12 md:flex-row md:items-center">
           <h2 className="font-serif text-5xl italic sm:text-6xl">Bon voyage.</h2>
           <Button size="lg" className="h-12 px-6 text-base" render={<Link href="/reserver" />} nativeButton={false}>
             Réserver en 2 minutes <ArrowRightIcon data-icon="inline-end" />
@@ -293,7 +293,7 @@ async function AverageRating() {
 async function ReviewsSection() {
   const { real, items, average } = await getLandingReviews();
   return (
-    <section className="mx-auto max-w-6xl px-4 py-24 sm:px-6">
+    <section id="avis" className="mx-auto max-w-6xl px-4 py-24 sm:px-6">
       <div className="flex flex-wrap items-end justify-between gap-4">
         <h2 className="text-3xl font-semibold tracking-tight sm:text-4xl">
           Ils sont <span className="font-serif font-normal italic">bien rentrés.</span>
@@ -370,8 +370,8 @@ async function DepartureBoard() {
   const days = (n: number) => new Date(start.getTime() + n * 24 * 3600_000);
 
   return (
-    <div className="mt-10 overflow-hidden rounded-3xl bg-foreground font-mono text-background">
-      <div className="grid grid-cols-[1fr_auto_auto] gap-x-6 border-b border-background/15 px-6 py-3 text-[11px] tracking-[0.2em] text-background/50 uppercase sm:grid-cols-[1fr_auto_auto_auto_auto] sm:px-8">
+    <div className="mt-10 overflow-hidden rounded-3xl bg-neutral-950 dark:bg-card dark:ring-1 dark:ring-border dark:ring-inset font-mono text-white">
+      <div className="grid grid-cols-[1fr_auto_auto] gap-x-6 border-b border-white/15 px-6 py-3 text-[11px] tracking-[0.2em] text-white/50 uppercase sm:grid-cols-[1fr_auto_auto_auto_auto] sm:px-8">
         <span>Parking</span>
         <span className="text-right">Par jour</span>
         <span className="hidden text-right sm:block">7 jours</span>
@@ -384,22 +384,22 @@ async function DepartureBoard() {
         return (
           <div
             key={p.slug}
-            className="grid grid-cols-[1fr_auto_auto] items-center gap-x-6 border-b border-background/10 px-6 py-5 last:border-0 sm:grid-cols-[1fr_auto_auto_auto_auto] sm:px-8"
+            className="grid grid-cols-[1fr_auto_auto] items-center gap-x-6 border-b border-white/10 px-6 py-5 last:border-0 sm:grid-cols-[1fr_auto_auto_auto_auto] sm:px-8"
           >
             <span className="text-lg tracking-wide uppercase">
               <span className="text-primary">{AIRPORT_CODES[p.slug]?.code}</span>{" "}
-              <span className="text-background/70">{AIRPORT_CODES[p.slug]?.label ?? p.name}</span>
+              <span className="text-white/70">{AIRPORT_CODES[p.slug]?.label ?? p.name}</span>
             </span>
             <span className="text-right text-lg tabular-nums">{formatEuros(p.dailyRateCents)}</span>
             <span className="hidden text-right tabular-nums sm:block">{week.ok && formatEuros(week.totalCents)}</span>
             <span className="text-right tabular-nums">{twoWeeks.ok && formatEuros(twoWeeks.totalCents)}</span>
-            <span className="hidden items-center justify-end gap-2 text-xs text-background/70 sm:flex">
+            <span className="hidden items-center justify-end gap-2 text-xs text-white/70 sm:flex">
               <span className="size-1.5 animate-pulse rounded-full bg-primary" /> OUVERT 24H/24
             </span>
           </div>
         );
       })}
-      <p className="px-6 py-4 text-xs text-background/50 sm:px-8">
+      <p className="px-6 py-4 text-xs text-white/50 sm:px-8">
         -20 % du 4e au 7e jour · -40 % à partir du 8e jour
       </p>
     </div>

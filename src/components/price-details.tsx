@@ -23,7 +23,7 @@ export function PriceDetails({
         </li>
       ))}
       {quote.promo && quote.discountCents > 0 && (
-        <li className="flex justify-between gap-3 text-emerald-700">
+        <li className="flex justify-between gap-3 text-emerald-700 dark:text-emerald-300">
           <span>
             Code {quote.promo.code} ({quote.promo.label})
           </span>

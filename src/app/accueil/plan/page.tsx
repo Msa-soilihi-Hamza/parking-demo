@@ -90,7 +90,7 @@ async function Plan({ searchParams }: Pick<PageProps<"/accueil/plan">, "searchPa
         <Legend className="border border-dashed border-muted-foreground/40">Libre</Legend>
         <Legend className="bg-foreground/80">Occupée</Legend>
         <Legend className="bg-primary">À sortir bientôt</Legend>
-        <Legend className="ring-2 ring-emerald-500 ring-offset-1">Place proposée</Legend>
+        <Legend className="ring-2 ring-emerald-500 ring-offset-1 ring-offset-background">Place proposée</Legend>
       </div>
 
       <div className="space-y-6">
@@ -115,7 +115,7 @@ async function Plan({ searchParams }: Pick<PageProps<"/accueil/plan">, "searchPa
                         title={`${spot} · libre`}
                         className={cn(
                           "flex aspect-square items-center justify-center rounded-md border border-dashed border-muted-foreground/40 font-mono text-[11px] text-muted-foreground",
-                          spot === suggested && "border-solid border-emerald-500 font-semibold text-emerald-700 ring-2 ring-emerald-500 ring-offset-1",
+                          spot === suggested && "border-solid border-emerald-500 font-semibold text-emerald-700 dark:text-emerald-300 ring-2 ring-emerald-500 ring-offset-1 ring-offset-background",
                         )}
                       >
                         {label}
@@ -128,8 +128,8 @@ async function Plan({ searchParams }: Pick<PageProps<"/accueil/plan">, "searchPa
                         href={arrivalPath(car.reference)}
                         title={`${spot} · ${car.customerName} · ${car.plate} · retour ${formatDateTime(car.returnAt)}`}
                         className={cn(
-                          "flex aspect-square items-center justify-center rounded-md font-mono text-[11px] text-background transition hover:opacity-80",
-                          isSoon(car) ? "bg-primary" : "bg-foreground/80",
+                          "flex aspect-square items-center justify-center rounded-md font-mono text-[11px] transition hover:opacity-80",
+                          isSoon(car) ? "bg-primary text-primary-foreground" : "bg-foreground/80 text-background",
                         )}
                       >
                         {label}

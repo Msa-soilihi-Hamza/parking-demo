@@ -87,10 +87,10 @@ async function Details({
       </PageTitle>
 
       {justCreated && onSite && (
-        <Alert className="border-emerald-200 bg-emerald-50 text-emerald-900">
-          <CircleCheckIcon className="text-emerald-600" />
+        <Alert className="border-emerald-200 dark:border-emerald-500/30 bg-emerald-50 dark:bg-emerald-500/15 text-emerald-900 dark:text-emerald-100">
+          <CircleCheckIcon className="text-emerald-600 dark:text-emerald-400" />
           <AlertTitle>Client enregistré, {formatEuros(booking.priceCents)} encaissés sur place</AlertTitle>
-          <AlertDescription className="text-emerald-800">
+          <AlertDescription className="text-emerald-800 dark:text-emerald-200">
             Faites-lui scanner le QR code ci-dessous : il retrouve sa réservation et prévient la navette à son
             retour.
           </AlertDescription>
@@ -148,13 +148,13 @@ async function Details({
       </dl>
 
       {booking.parkedAt ? (
-        <Alert className="border-emerald-200 bg-emerald-50 text-emerald-900">
-          <CircleCheckIcon className="text-emerald-600" />
+        <Alert className="border-emerald-200 dark:border-emerald-500/30 bg-emerald-50 dark:bg-emerald-500/15 text-emerald-900 dark:text-emerald-100">
+          <CircleCheckIcon className="text-emerald-600 dark:text-emerald-400" />
           <AlertTitle>
             Véhicule déposé à {formatTime(booking.parkedAt)}, place{" "}
             <span className="font-mono">{booking.parkingSpot}</span>
           </AlertTitle>
-          <AlertDescription className="text-emerald-800">
+          <AlertDescription className="text-emerald-800 dark:text-emerald-200">
             Enregistré le {formatDateTime(booking.parkedAt)}. Le client voit la place sur sa réservation.
           </AlertDescription>
         </Alert>
@@ -162,7 +162,7 @@ async function Details({
         paid && (
           <div className="space-y-4">
             {otherDay && (
-              <p className="rounded-lg bg-amber-50 px-4 py-3 text-sm text-amber-900">
+              <p className="rounded-lg bg-amber-50 dark:bg-amber-500/15 px-4 py-3 text-sm text-amber-900 dark:text-amber-100">
                 Arrivée prévue le {formatDateTime(booking.dropoffAt)}, pas aujourd&apos;hui : vérifiez avec le client
                 avant d&apos;enregistrer.
               </p>

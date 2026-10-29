@@ -166,10 +166,10 @@ async function Reservation({
 
             {booking.pickupStatus === "bags_ready" && (
               <div className="space-y-3">
-                <Alert className="border-emerald-200 bg-emerald-50 text-emerald-900">
-                  <CircleCheckIcon className="text-emerald-600" />
+                <Alert className="border-emerald-200 dark:border-emerald-500/30 bg-emerald-50 dark:bg-emerald-500/15 text-emerald-900 dark:text-emerald-100">
+                  <CircleCheckIcon className="text-emerald-600 dark:text-emerald-400" />
                   <AlertTitle>L&apos;équipe navette a bien reçu votre demande</AlertTitle>
-                  <AlertDescription className="text-emerald-800">
+                  <AlertDescription className="text-emerald-800 dark:text-emerald-200">
                     Reçue à {formatTime(booking.bagsReadyAt!)}. Rendez-vous au point navette du terminal{" "}
                     <strong>{booking.returnTerminal}</strong>. Une confirmation vient de vous être envoyée par
                     e-mail, et cette page se met à jour toute seule.
@@ -182,7 +182,7 @@ async function Reservation({
               </div>
             )}
             {booking.pickupStatus === "en_route" && (
-              <p className="rounded-lg bg-amber-50 px-4 py-3 text-sm text-amber-900">
+              <p className="rounded-lg bg-amber-50 dark:bg-amber-500/15 px-4 py-3 text-sm text-amber-900 dark:text-amber-100">
                 <strong>La navette est en route.</strong> Rendez-vous au point navette du terminal{" "}
                 {booking.returnTerminal}. Un changement de dernière minute ? Appelez le{" "}
                 <a href={SUPPORT_PHONE_HREF} className="font-medium underline">

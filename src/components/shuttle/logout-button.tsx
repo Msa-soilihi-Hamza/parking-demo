@@ -31,7 +31,10 @@ export function LogoutButton({ space }: { space: TeamSpace }) {
   const [pending, startTransition] = useTransition();
   return (
     <AlertDialog>
-      <AlertDialogTrigger render={<Button variant="outline" size="sm" />}>Déconnexion</AlertDialogTrigger>
+      <AlertDialogTrigger render={<Button variant="ghost" size="sm" />}>
+        <LogOutIcon /> <span className="hidden lg:inline">Déconnexion</span>
+        <span className="sr-only lg:hidden">Déconnexion</span>
+      </AlertDialogTrigger>
       <AlertDialogContent size="sm">
         <AlertDialogHeader>
           <AlertDialogMedia className="bg-primary/10 text-primary">
