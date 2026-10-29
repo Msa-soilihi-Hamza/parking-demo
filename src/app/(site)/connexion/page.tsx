@@ -1,4 +1,5 @@
 import { headers } from "next/headers";
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { connection } from "next/server";
 import { Suspense } from "react";
@@ -36,7 +37,7 @@ async function SignIn({ searchParams }: Pick<PageProps<"/connexion">, "searchPar
       <CardHeader>
         <CardTitle className="text-2xl">Connexion</CardTitle>
         <CardDescription>
-          Clients et équipe, une seule connexion. Pas encore de compte ? Il est créé à la première connexion.
+          Clients et équipe, une seule connexion.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -47,6 +48,15 @@ async function SignIn({ searchParams }: Pick<PageProps<"/connexion">, "searchPar
         )}
         {/* Google comes back here, so the same choice of space applies. */}
         <SignInPanel googleEnabled={googleEnabled} callbackURL={next ?? "/connexion"} />
+        <p className="border-t pt-4 text-center text-sm text-muted-foreground">
+          Pas encore de compte ?{" "}
+          <Link
+            href={next ? `/inscription?suite=${encodeURIComponent(next)}` : "/inscription"}
+            className="font-medium text-foreground underline-offset-4 hover:underline"
+          >
+            Créer un compte
+          </Link>
+        </p>
       </CardContent>
     </Card>
   );

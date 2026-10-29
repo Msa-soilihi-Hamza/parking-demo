@@ -33,17 +33,21 @@ function messageFor(error: AuthError): string {
 /**
  * Sign in or create an account in the same step: Google, or a 6-digit code sent by
  * e-mail (no password). `callbackURL`: where Google brings the customer back.
+ * `mode` only changes the wording and the page Google returns to after an error.
  */
 export function SignInPanel({
   googleEnabled,
   callbackURL,
   onSignedIn,
+  mode = "sign-in",
 }: {
   googleEnabled: boolean;
   callbackURL: string;
   /** Called once signed in with the code; by default the page is refreshed. */
   onSignedIn?: () => void;
+  mode?: "sign-in" | "sign-up";
 }) {
+  const signUp = mode === "sign-up";
   const router = useRouter();
   const [step, setStep] = useState<"email" | "code">("email");
   const [email, setEmail] = useState("");
@@ -86,7 +90,7 @@ export function SignInPanel({
       const { error } = await authClient.signIn.social({
         provider: "google",
         callbackURL,
-        errorCallbackURL: `/connexion?erreur=google&suite=${encodeURIComponent(callbackURL)}`,
+        errorCallbackURL: `${signUp ? "/inscription" : "/connexion"}?erreur=google&suite=${encodeURIComponent(callbackURL)}`,
       });
       // On success the browser leaves for Google; an error means it could not start.
       if (error) setError(messageFor(error));
@@ -97,7 +101,7 @@ export function SignInPanel({
       {googleEnabled && step === "email" && (
         <>
           <Button type="button" variant="outline" size="lg" className="w-full" disabled={pending} onClick={google}>
-            <GoogleIcon /> Continuer avec Google
+            <GoogleIcon /> {signUp ? "S'inscrire avec Google" : "Continuer avec Google"}
           </Button>
           <div className="flex items-center gap-3 text-xs text-muted-foreground">
             <Separator className="flex-1" /> ou <Separator className="flex-1" />
@@ -134,7 +138,7 @@ export function SignInPanel({
           </Field>
           <Button type="submit" size="lg" className="w-full" disabled={pending || !email.trim()}>
             {pending ? <Loader2Icon className="animate-spin" /> : <MailIcon />}
-            Recevoir un code
+            {signUp ? "Créer mon compte" : "Recevoir un code"}
           </Button>
         </form>
       ) : (
