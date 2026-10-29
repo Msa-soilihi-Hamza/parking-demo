@@ -65,7 +65,7 @@ export function QuickQuote({ parkings, defaultDates, minDay }: Props) {
           ))}
         </div>
         <div className="mt-4 pb-6">
-          <StayDatesPicker value={dates} onChange={setDates} minDay={minDay} layout="stacked" />
+          <StayDatesPicker value={dates} onChange={setDates} minDay={minDay} />
         </div>
       </div>
 

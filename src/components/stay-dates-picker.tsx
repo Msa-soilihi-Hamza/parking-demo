@@ -1,11 +1,11 @@
 "use client";
 
 import { CalendarIcon, Clock2Icon } from "lucide-react";
-import type { DateRange } from "react-day-picker";
+import { useState } from "react";
 import { fr } from "react-day-picker/locale";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
-import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
+import { Field, FieldLabel } from "@/components/ui/field";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
@@ -78,69 +78,99 @@ type Props = {
   onChange: (value: StayDates) => void;
   /** First selectable day ("2026-10-20") */
   minDay: string;
-  /** "stacked" puts the dates above the two times, for narrow cards. */
-  layout?: "inline" | "stacked";
 };
 
-/** One calendar for the whole stay, plus the drop-off and landing times. */
-export function StayDatesPicker({ value, onChange, minDay, layout = "inline" }: Props) {
-  const range: DateRange = { from: fromDay(value.from), to: value.to ? fromDay(value.to) : undefined };
-
+/** One day, picked from a calendar that closes once the day is chosen. */
+function DayField({
+  id,
+  label,
+  value,
+  minDay,
+  placeholder,
+  onChange,
+}: {
+  id: string;
+  label: string;
+  value: string;
+  minDay: string;
+  placeholder: string;
+  onChange: (day: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
   return (
-    <div
-      className={
-        layout === "inline" ? "grid gap-4 sm:grid-cols-[1fr_auto_auto]" : "grid gap-3 sm:grid-cols-2"
-      }
-    >
-      <Field className={layout === "stacked" ? "sm:col-span-2" : undefined}>
-        <FieldLabel>Dates du séjour</FieldLabel>
-        <Popover>
-          <PopoverTrigger
-            render={
-              <Button variant="outline" className="w-full justify-start font-normal">
-                <CalendarIcon className="text-muted-foreground" />
-                {shortDay(value.from)} → {value.to ? shortDay(value.to) : "retour ?"}
-              </Button>
-            }
+    <Field>
+      <FieldLabel htmlFor={id}>{label}</FieldLabel>
+      <Popover open={open} onOpenChange={setOpen}>
+        <PopoverTrigger
+          render={
+            <Button id={id} variant="outline" className="w-full justify-start font-normal">
+              <CalendarIcon className="text-muted-foreground" />
+              {value ? shortDay(value) : <span className="text-muted-foreground">{placeholder}</span>}
+            </Button>
+          }
+        />
+        <PopoverContent className="w-auto p-0" align="start">
+          <Calendar
+            mode="single"
+            locale={fr}
+            showOutsideDays={false}
+            defaultMonth={fromDay(value || minDay)}
+            selected={value ? fromDay(value) : undefined}
+            disabled={{ before: fromDay(minDay) }}
+            onSelect={(day) => {
+              // Clicking the chosen day again would clear it: keep it instead.
+              if (day) onChange(toDay(day));
+              setOpen(false);
+            }}
           />
-          <PopoverContent className="w-auto p-0" align="start">
-            <Calendar
-              mode="range"
-              locale={fr}
-              numberOfMonths={2}
-              showOutsideDays={false}
-              defaultMonth={range.from}
-              selected={range}
-              disabled={{ before: fromDay(minDay) }}
-              onSelect={(next) => {
-                if (!next?.from) return;
-                onChange({ ...value, from: toDay(next.from), to: next.to ? toDay(next.to) : "" });
-              }}
-            />
-          </PopoverContent>
-        </Popover>
-      </Field>
+        </PopoverContent>
+      </Popover>
+    </Field>
+  );
+}
 
-      <FieldGroup className="contents">
-        <Field>
-          <FieldLabel htmlFor="dropoffTime">Heure de dépôt</FieldLabel>
-          <TimeSelect
-            id="dropoffTime"
-            label="Heure de dépôt"
-            value={value.dropoffTime}
-            onChange={(dropoffTime) => onChange({ ...value, dropoffTime })}
-          />
-        </Field>
-        <Field>
-          <FieldLabel htmlFor="returnTime">Atterrissage retour</FieldLabel>
-          <TimeSelect
-            id="returnTime"
-            label="Atterrissage retour"
-            value={value.returnTime}
-            onChange={(returnTime) => onChange({ ...value, returnTime })}
-          />
-        </Field>
-      </FieldGroup>
+/**
+ * The stay as two separate days, each with its own calendar, and their times:
+ * departure (drop-off) on the first row, return (landing) on the second.
+ */
+export function StayDatesPicker({ value, onChange, minDay }: Props) {
+  return (
+    <div className="grid gap-3 sm:grid-cols-2 sm:gap-4">
+      <DayField
+        id="dropoffDay"
+        label="Date de départ"
+        value={value.from}
+        minDay={minDay}
+        placeholder="Choisir"
+        // A return before the new departure no longer makes sense: it is asked again.
+        onChange={(from) => onChange({ ...value, from, to: value.to && value.to < from ? "" : value.to })}
+      />
+      <Field>
+        <FieldLabel htmlFor="dropoffTime">Heure de dépôt</FieldLabel>
+        <TimeSelect
+          id="dropoffTime"
+          label="Heure de dépôt"
+          value={value.dropoffTime}
+          onChange={(dropoffTime) => onChange({ ...value, dropoffTime })}
+        />
+      </Field>
+      <DayField
+        id="returnDay"
+        label="Date de retour"
+        value={value.to}
+        minDay={value.from || minDay}
+        placeholder="Choisir"
+        onChange={(to) => onChange({ ...value, to })}
+      />
+      <Field>
+        <FieldLabel htmlFor="returnTime">Atterrissage retour</FieldLabel>
+        <TimeSelect
+          id="returnTime"
+          label="Atterrissage retour"
+          value={value.returnTime}
+          onChange={(returnTime) => onChange({ ...value, returnTime })}
+        />
+      </Field>
 
       {/* What the server receives: "2026-10-20T08:00" in Paris time */}
       <input type="hidden" name="dropoffAt" value={`${value.from}T${value.dropoffTime}`} />
