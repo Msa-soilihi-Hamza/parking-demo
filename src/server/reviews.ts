@@ -1,4 +1,4 @@
-import { and, desc, eq, isNotNull, ne, notLike } from "drizzle-orm";
+import { and, desc, eq, isNotNull, ne, notLike, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { bookings, parkings, reviews, type Review } from "@/db/schema";
 import { REVIEW_MAX_LENGTH } from "@/lib/validation";
@@ -49,6 +49,30 @@ export async function submitReview(input: ReviewInput): Promise<ReviewResult> {
     .returning({ id: reviews.id });
   if (inserted.length === 0) return { ok: false, error: "Vous avez déjà donné votre avis. Merci !" };
   return { ok: true };
+}
+
+export type ReviewStats = {
+  count: number;
+  /** 1 to 5, or null without any review */
+  average: number | null;
+  /** Share of 4- and 5-star reviews, from 0 to 1 */
+  satisfiedShare: number;
+};
+
+/** Every review, published or not: the landing page's satisfaction figures. */
+export async function getReviewStats(): Promise<ReviewStats> {
+  const [row] = await db
+    .select({
+      count: sql<number>`count(*)::int`,
+      average: sql<string | null>`avg(${reviews.rating})`,
+      satisfied: sql<number>`(count(*) filter (where ${reviews.rating} >= 4))::int`,
+    })
+    .from(reviews);
+  return {
+    count: row.count,
+    average: row.average === null ? null : Number(row.average),
+    satisfiedShare: row.count ? row.satisfied / row.count : 0,
+  };
 }
 
 export async function getReviewForBooking(bookingId: string): Promise<Review | null> {

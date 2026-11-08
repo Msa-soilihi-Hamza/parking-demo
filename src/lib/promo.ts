@@ -2,6 +2,9 @@
 // limited number of bookings or not. Pure rules; the use count is checked on the
 // server, under lock, when the spot is held.
 
+/** The code announced in the banner above the header (shown only while it works). */
+export const BANNER_PROMO_CODE = "VACANCE12";
+
 /** A code is valid for at most a year from the day it is created. */
 export const MAX_VALIDITY_DAYS = 365;
 

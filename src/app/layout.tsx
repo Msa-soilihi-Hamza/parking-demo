@@ -21,9 +21,9 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Escale Parking — Parking aéroport avec navette",
+  title: "Escale Parking — Parking pas cher à Orly et Roissy-CDG, navette comprise",
   description:
-    "Parking à Orly et Roissy-CDG avec navette. Prix immédiat, paiement en ligne, et au retour un seul bouton pour qu'on vienne vous chercher.",
+    "Garez-vous à Orly ou Roissy-CDG pour moins cher qu'au parking de l'aéroport. Navette aller-retour comprise, voiture surveillée 24h/24.",
 };
 
 // The public site (header + footer) lives in (site)/layout.tsx; the shuttle team's

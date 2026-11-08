@@ -14,9 +14,10 @@ import {
 
 // The landing page's sections, reachable from every public page.
 const LINKS = [
-  { href: "/#fonctionnement", label: "Fonctionnement" },
   { href: "/#tarifs", label: "Tarifs" },
+  { href: "/#securite", label: "Sécurité" },
   { href: "/#avis", label: "Avis" },
+  { href: "/#fonctionnement", label: "Fonctionnement" },
 ];
 
 /** Computers: the links in the bar. */

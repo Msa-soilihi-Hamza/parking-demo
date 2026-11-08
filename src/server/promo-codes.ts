@@ -1,7 +1,7 @@
 import { and, count, desc, eq, gte, or, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { bookings, promoCodes, type PromoCode } from "@/db/schema";
-import { MAX_VALIDITY_DAYS, normalizePromoCode, type PromoKind } from "@/lib/promo";
+import { MAX_VALIDITY_DAYS, normalizePromoCode, promoLabel, promoProblem, type PromoKind } from "@/lib/promo";
 import { parisDayBounds } from "@/lib/time";
 import { HOLD_COUNTED_MINUTES } from "@/server/bookings";
 
@@ -52,6 +52,19 @@ export async function createPromoCode(input: NewPromoCode, now = new Date()): Pr
     .onConflictDoNothing({ target: promoCodes.code })
     .returning();
   return promo ? { ok: true, promo } : { ok: false, error: `Le code ${code} existe déjà.` };
+}
+
+/**
+ * A code announced on the landing page: only while it works for everyone (active,
+ * in its dates, without a use limit that could run out under the banner).
+ */
+export async function getPublicOffer(
+  code: string,
+  now = new Date(),
+): Promise<{ code: string; label: string; validUntil: Date | null } | null> {
+  const [promo] = await db.select().from(promoCodes).where(eq(promoCodes.code, code));
+  if (!promo || promo.maxUses !== null || promoProblem(promo, now)) return null;
+  return { code: promo.code, label: promoLabel(promo), validUntil: promo.validUntil };
 }
 
 /** Stops a code at once (leaked on a deals site…), or brings it back. */

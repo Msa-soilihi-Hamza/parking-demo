@@ -14,13 +14,15 @@ type Props = {
   parkings: ParkingRate[];
   defaultDates: StayDates;
   minDay: string;
+  /** A promo code announced on the page: applied on the booking form. */
+  promo?: string;
 };
 
 /**
  * The landing page's booking card, styled as a boarding pass.
  * A plain GET form: /reserver opens with the parking and dates already chosen.
  */
-export function QuickQuote({ parkings, defaultDates, minDay }: Props) {
+export function QuickQuote({ parkings, defaultDates, minDay, promo }: Props) {
   const [slug, setSlug] = useState(parkings[0]?.slug ?? "");
   const [dates, setDates] = useState(defaultDates);
   const parking = parkings.find((p) => p.slug === slug);
@@ -35,6 +37,7 @@ export function QuickQuote({ parkings, defaultDates, minDay }: Props) {
   return (
     <form action="/reserver" method="get" className="relative w-full max-w-md rounded-3xl border bg-card shadow-[0_30px_80px_-40px_rgba(0,0,0,0.35)]">
       <input type="hidden" name="parking" value={slug} />
+      {promo && <input type="hidden" name="promo" value={promo} />}
 
       {/* Header: airport code → parking, like a boarding pass */}
       <div className="px-6 pt-6">

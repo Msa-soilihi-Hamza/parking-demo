@@ -2,6 +2,7 @@ import Link from "next/link";
 import { Suspense } from "react";
 import { AccountLink, SignInLink } from "@/components/account-link";
 import { BrandLogo } from "@/components/brand-logo";
+import { PromoBanner } from "@/components/promo-banner";
 import { SiteMobileMenu, SiteNavLinks } from "@/components/site-nav";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Button } from "@/components/ui/button";
@@ -10,6 +11,9 @@ import { SUPPORT_PHONE, SUPPORT_PHONE_HREF } from "@/lib/contact";
 export default function SiteLayout({ children }: LayoutProps<"/">) {
   return (
     <>
+      <Suspense fallback={null}>
+        <PromoBanner />
+      </Suspense>
       <header className="sticky top-0 z-40 border-b border-border/60 bg-background/75 backdrop-blur-lg">
         <div className="mx-auto flex h-16 max-w-6xl items-center gap-6 px-4 sm:px-6">
           <Link href="/" aria-label="Escale, accueil" className="rounded-lg">
